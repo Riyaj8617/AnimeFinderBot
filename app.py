@@ -121,8 +121,19 @@ def send_file(call):
     if call.data != "none":
         try:
             file_data = files_col.find_one({"_id": ObjectId(call.data)})
-            if file_data: bot.send_document(call.message.chat.id, file_data['file_id'], caption="আপনার ফাইলটি তৈরি! উপভোগ করুন। 🍿")
-        except: bot.answer_callback_query(call.id, "লিংকটি কাজ করছে না!", show_alert=True)
+            if file_data:
+                # ডাইনামিক ক্যাপশন তৈরি করা (ফাইলের আসল নামসহ)
+                file_title = file_data.get('file_name', 'Unknown File')
+                dynamic_caption = f"🎬 **{file_title}**\n\n🍿 আপনার ফাইলটি তৈরি! উপভোগ করুন।"
+                
+                bot.send_document(
+                    call.message.chat.id, 
+                    file_data['file_id'], 
+                    caption=dynamic_caption, 
+                    parse_mode="Markdown"
+                )
+        except Exception as e: 
+            bot.answer_callback_query(call.id, "লিংকটি কাজ করছে না!", show_alert=True)
     else:
         bot.answer_callback_query(call.id, "ফাইলটি ডাটাবেসে নেই।", show_alert=True)
 
