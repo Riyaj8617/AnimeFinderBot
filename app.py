@@ -73,6 +73,36 @@ def broadcast_message(message):
         try: bot.copy_message(user['user_id'], message.chat.id, message.reply_to_message.message_id)
         except: pass
     bot.send_message(ADMIN_ID, "✅ ব্রডকাস্ট সফল হয়েছে!")
+@bot.message_handler(commands=['list', 'menu'])
+def show_catalog(message):
+    bot.send_chat_action(message.chat.id, 'typing')
+    try:
+        all_files = files_col.find()
+        unique_movies = set()
+        
+        for file in all_files:
+            full_name = file.get('file_name', '')
+            # শুধু আসল নামটা বের করা (সিজন বা এপিসোড নম্বর বাদ দিয়ে)
+            base_name = re.split(r'(?i) S\d+| Ep \d+', full_name)[0].strip()
+            if base_name:
+                unique_movies.add(base_name)
+                
+        if not unique_movies:
+            bot.reply_to(message, "🚫 এখনো কোনো মুভি বা সিরিজ আপলোড করা হয়নি।")
+            return
+            
+        catalog_text = "📚 **আমাদের কালেকশনে থাকা মুভি ও অ্যানিমে:**\n\n"
+        for idx, movie in enumerate(sorted(unique_movies), 1):
+            catalog_text += f"🍿 **{movie}**\n"
+            
+        catalog_text += "\n💡 *যেকোনো একটির নাম লিখে আমাকে মেসেজ দিন, আমি ছবিসহ সব ফাইল দিয়ে দেব!*"
+        bot.send_message(message.chat.id, catalog_text, parse_mode="Markdown")
+        
+    except Exception as e:
+        bot.reply_to(message, "একটু সমস্যা হচ্ছে, পরে আবার চেষ্টা করুন।")
+        
+
+
 
 @bot.message_handler(func=lambda message: True)
 def search_logic(message):
