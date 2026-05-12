@@ -8,7 +8,7 @@ from pymongo import MongoClient
 from bson.objectid import ObjectId
 from flask import Flask
 
-print("🚀 Ultimate Pro Server V3.1 (Perfect Architecture) is Running...")
+print("🚀 Ultimate Pro Server V3.2 (Advanced Garbage Cleaner) is Running...")
 
 # --- Credentials ---
 BOT_TOKEN = '8351560947:AAEuuIpuOqU9rLJpwJfVrudwsrGNW-iXUWA'
@@ -27,7 +27,6 @@ searches_col = db['searches']
 bot = telebot.TeleBot(BOT_TOKEN)
 app = Flask(__name__)
 
-# --- 🛠 Smart Menu Setup ---
 def set_bot_commands():
     try:
         user_cmds = [
@@ -47,7 +46,6 @@ def set_bot_commands():
         bot.set_my_commands(admin_cmds, scope=telebot.types.BotCommandScopeChat(ADMIN_ID))
     except: pass
 
-# --- Helper Functions ---
 def get_deep_link(movie_name):
     payload = re.sub(r'[^a-zA-Z0-9]', '_', movie_name)[:60]
     return f"https://t.me/{BOT_USERNAME}?start={payload}"
@@ -59,16 +57,20 @@ def is_subscribed(user_id):
         return status in ['creator', 'administrator', 'member']
     except: return False
 
+# 🧹 ADVANCED GARBAGE CLEANER 🧹
 def clean_name(text):
-    # রিমুভ চ্যানেল ট্যাগ, লিংক এবং স্পেশাল ক্যারেক্টার
-    text = re.sub(r'@[a-zA-Z0-9_]+', '', text)
-    text = re.sub(r'https?://\S+', '', text)
+    # রিমুভ ট্যাগস যেমন [@SBANIME] বা [720p]
+    text = re.sub(r'\[.*?\]', ' ', text) 
+    text = re.sub(r'@[a-zA-Z0-9_]+', ' ', text)
+    text = re.sub(r'https?://\S+', ' ', text)
+    # রিমুভ সাল (যেমন: (2019) বা 2025)
+    text = re.sub(r'\(\d{4}\)', ' ', text)
+    # রিমুভ ফালতু কোয়ালিটি ও ফরম্যাট ওয়ার্ডস
+    junk_words = r'(?i)(1080p|720p|480p|hevc|10bit|amzn|web-?dl|bluray|brrip|hindi audio|hindi dub|dual audio|esub|mkv|mp4|full movie|in official|official)'
+    text = re.sub(junk_words, ' ', text)
+    
     clean = re.sub(r'[^a-zA-Z0-9]', ' ', text)
     return re.sub(r'\s+', ' ', clean).strip()
-
-# ==========================================
-# 1. COMMAND HANDLERS (MUST BE AT THE TOP)
-# ==========================================
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
@@ -77,9 +79,9 @@ def send_welcome(message):
     if len(text_parts) > 1:
         query = " ".join(text_parts[1:]).replace("_", " ")
         message.text = query 
-        search_logic(message) # ডাইরেক্ট সার্চ ইঞ্জিনে পাঠিয়ে দেবে
+        search_logic(message) 
         return
-    bot.reply_to(message, "Welcome! 🎬\nI am your Ultimate Movie Bot. Send me the name of any anime, movie, or series, and I will provide the files instantly.")
+    bot.reply_to(message, "Welcome! 🎬\nI am your Ultimate Movie Bot. Send me the exact name of any anime, movie, or series, and I will provide the files instantly.")
 
 @bot.message_handler(commands=['stats'])
 def show_stats(message):
@@ -93,9 +95,9 @@ def custom_channel_post(message):
     try:
         content = message.text.replace('/post ', '').split('|')
         name = content[0].strip()
-        eps = content[1].strip() if len(content) > 1 else "New Episodes Added"
+        eps = content[1].strip() if len(content) > 1 else "New Release"
         deep_link = get_deep_link(name)
-        post_text = f"🎬 **New Release Available!**\n\n📌 **Title:** {name}\n▶️ **Episodes:** {eps}\n\n👇 **Download or Watch Online:**\n👉 **[Click Here to Watch]({deep_link})**"
+        post_text = f"🎬 **New Release Available!**\n\n📌 **Title:** {name}\n▶️ **Info:** {eps}\n\n👇 **Download or Watch Online:**\n👉 **[Click Here to Watch]({deep_link})**"
         
         tmdb_url = f"https://api.themoviedb.org/3/search/multi?api_key={TMDB_API_KEY}&query={name}&language=en-US"
         poster_url = None
@@ -163,10 +165,6 @@ def show_catalog(message):
         bot.send_message(message.chat.id, catalog_text, parse_mode="Markdown", disable_web_page_preview=True)
     except: pass
 
-# ==========================================
-# 2. FILE UPLOAD LOGIC
-# ==========================================
-
 @bot.message_handler(content_types=['video', 'document'])
 def index_files(message):
     if message.chat.id != ADMIN_ID: return
@@ -178,11 +176,10 @@ def index_files(message):
     s_num = int(s_match.group(1)) if s_match else 1
     e_num = int(e_match.group(1)) if e_match else None
     
-    # নাম ক্লিন করা হচ্ছে (বেস্ট টাইটেল জেনারেটর)
     title_part = re.split(r'(?i)season|episode|ep|s\d+', raw_text)[0]
     base_title = clean_name(title_part)
     
-    display_name = f"{base_title} S{s_num:02d} E{e_num:02d}" if e_num else base_title
+    display_name = f"{base_title.title()} S{s_num:02d} E{e_num:02d}" if e_num else base_title.title()
     btn_name = f"📺 Ep {e_num:02d}" if e_num else f"🎬 Watch Now"
 
     files_col.update_one(
@@ -195,11 +192,7 @@ def index_files(message):
             "btn_name": btn_name, 
             "file_id": file_id
         }}, upsert=True)
-    bot.reply_to(message, f"✅ Saved successfully: {display_name}")
-
-# ==========================================
-# 3. SEARCH LOGIC (MUST BE AT THE BOTTOM)
-# ==========================================
+    bot.reply_to(message, f"✅ Cleaned & Saved: {display_name}")
 
 @bot.message_handler(func=lambda message: True)
 def search_logic(message):
@@ -211,7 +204,6 @@ def search_logic(message):
     search_query = query.split(" season")[0].split(" episode")[0].strip()
     bot.send_chat_action(message.chat.id, 'typing')
     
-    # Smart Keyword Search
     words = re.sub(r'[^a-zA-Z0-9\s]', ' ', search_query).split()
     if not words: return
     search_filter = {"$and": [{"base_title": {"$regex": w, "$options": "i"}} for w in words]}
@@ -236,7 +228,8 @@ def search_logic(message):
                 if is_movie:
                     caption += "👇 **Click below to watch the movie:**"
                     for f in db_results:
-                        markup.add(telebot.types.InlineKeyboardButton("🎬 Watch Now", callback_data=f"file_{f['_id']}"))
+                        btn_txt = "🎬 Watch Now" if not f['e_num'] else f"📺 Ep {f['e_num']:02d}"
+                        markup.add(telebot.types.InlineKeyboardButton(btn_txt, callback_data=f"file_{f['_id']}"))
                 else:
                     caption += "👇 **Select Season:**"
                     seasons = sorted(list(set(f['s_num'] for f in db_results)))
@@ -248,15 +241,10 @@ def search_logic(message):
         else: bot.reply_to(message, "😔 No results found.")
     except: pass
 
-# ==========================================
-# 4. CALLBACK HANDLER (BUTTON CLICKS)
-# ==========================================
-
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callbacks(call):
     data = call.data.split('_')
     
-    # 1. Season Click -> Show Episodes
     if data[0] == "list":
         q, s = data[1], int(data[2])
         words = q.split()
@@ -272,7 +260,6 @@ def handle_callbacks(call):
         bot.edit_message_caption(chat_id=call.message.chat.id, message_id=call.message.message_id, 
                                  caption=f"📂 **Season {s} Episodes:**\nSelect an episode to download.", reply_markup=markup, parse_mode="Markdown")
 
-    # 2. Back to Seasons
     elif data[0] == "back":
         q = data[1]
         words = q.split()
@@ -287,7 +274,6 @@ def handle_callbacks(call):
         bot.edit_message_caption(chat_id=call.message.chat.id, message_id=call.message.message_id, 
                                  caption="👇 **Select Season:**", reply_markup=markup, parse_mode="Markdown")
 
-    # 3. Batch Send All Episodes
     elif data[0] == "all":
         q, s = data[1], int(data[2])
         bot.answer_callback_query(call.id, "🚀 Sending all episodes... Please wait.", show_alert=False)
@@ -298,20 +284,17 @@ def handle_callbacks(call):
             bot.send_document(call.message.chat.id, f['file_id'], caption=f"🎬 **{f['file_name']}**")
             time.sleep(1)
 
-    # 4. Single File Click
     elif data[0] == "file":
         file_data = files_col.find_one({"_id": ObjectId(data[1])})
         if file_data:
             bot.send_document(call.message.chat.id, file_data['file_id'], caption=f"🎬 **{file_data['file_name']}**\n\n🍿 Enjoy! Powered by @RAnimeTV")
 
-    # 5. Request Click
     elif data[0] == "req":
         bot.send_message(ADMIN_ID, f"🔔 **New Request:**\nUser: `{call.message.chat.id}`\nTitle: {data[1]}")
         bot.answer_callback_query(call.id, "✅ Request sent to Admin!", show_alert=True)
 
-# --- Keep Alive ---
 @app.route('/')
-def index(): return "🚀 V3.1 Pro Active!"
+def index(): return "🚀 V3.2 Pro Active!"
 
 def run_bot():
     set_bot_commands()
