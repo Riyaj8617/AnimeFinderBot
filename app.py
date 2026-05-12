@@ -8,9 +8,9 @@ from pymongo import MongoClient
 from bson.objectid import ObjectId
 from flask import Flask
 
-print("🚀 Ultimate Pro Server V2.3 (With Dynamic Menu) is Running...")
+print("🚀 Ultimate Pro Server V2.4 (English Version) is Running...")
 
-# --- ক্রেডেনশিয়ালস ---
+# --- Credentials ---
 BOT_TOKEN = '8351560947:AAEuuIpuOqU9rLJpwJfVrudwsrGNW-iXUWA'
 TMDB_API_KEY = 'eac1f699fd04bfed4063efc4e9166925'
 MONGO_URI = 'mongodb+srv://riya8617:Riyaj%40786@cluster0.lhmz2q8.mongodb.net/?appName=Cluster0'
@@ -27,32 +27,32 @@ searches_col = db['searches']
 bot = telebot.TeleBot(BOT_TOKEN)
 app = Flask(__name__)
 
-# --- 🛠 স্মার্ট মেনু শর্টকাট সেট করা ---
+# --- 🛠 Smart Menu Setup (English) ---
 def set_bot_commands():
     try:
-        # সাধারণ ইউজারদের জন্য মেনু
+        # Commands for normal users
         user_cmds = [
-            telebot.types.BotCommand("start", "বট শুরু করুন 🚀"),
-            telebot.types.BotCommand("list", "সব মুভি কালেকশন দেখুন 📚"),
-            telebot.types.BotCommand("menu", "মেনু ওপেন করুন 📱")
+            telebot.types.BotCommand("start", "Start the bot 🚀"),
+            telebot.types.BotCommand("list", "View all collections 📚"),
+            telebot.types.BotCommand("menu", "Open main menu 📱")
         ]
         bot.set_my_commands(user_cmds)
 
-        # শুধুমাত্র আপনার (Admin) জন্য মেনু
+        # Commands for Admin only
         admin_cmds = [
-            telebot.types.BotCommand("start", "বট শুরু করুন 🚀"),
-            telebot.types.BotCommand("list", "সব মুভি কালেকশন দেখুন 📚"),
-            telebot.types.BotCommand("stats", "বট ড্যাশবোর্ড দেখুন 📊"),
-            telebot.types.BotCommand("post", "চ্যানেলে ছবিসহ পোস্ট 🖼"),
-            telebot.types.BotCommand("broadcast", "সবাইকে মেসেজ দিন 📢"),
-            telebot.types.BotCommand("done", "রিকোয়েস্ট পূরণ নোটিফিকেশন ✅")
+            telebot.types.BotCommand("start", "Start the bot 🚀"),
+            telebot.types.BotCommand("list", "View all collections 📚"),
+            telebot.types.BotCommand("stats", "View admin dashboard 📊"),
+            telebot.types.BotCommand("post", "Post to channel 🖼"),
+            telebot.types.BotCommand("broadcast", "Broadcast message 📢"),
+            telebot.types.BotCommand("done", "Notify user about request ✅")
         ]
         bot.set_my_commands(admin_cmds, scope=telebot.types.BotCommandScopeChat(ADMIN_ID))
-        print("✅ কমান্ড মেনু সফলভাবে সেট করা হয়েছে!")
+        print("✅ Bot commands set successfully!")
     except Exception as e:
-        print(f"❌ মেনু সেট করতে সমস্যা: {e}")
+        print(f"❌ Failed to set commands: {e}")
 
-# --- ম্যাজিক লিংক জেনারেটর ---
+# --- Magic Link Generator ---
 def get_deep_link(movie_name):
     payload = re.sub(r'[^a-zA-Z0-9]', '_', movie_name)[:60]
     return f"https://t.me/{BOT_USERNAME}?start={payload}"
@@ -73,12 +73,12 @@ def send_welcome(message):
         message.text = query 
         search_logic(message)
         return
-    bot.reply_to(message, "স্বাগতম! 🎬\nআমি আপনার প্রো মুভি বট। মুভি বা সিরিজের নাম লিখুন, আমি ফাইল দিয়ে দেব।")
+    bot.reply_to(message, "Welcome! 🎬\nI am your Ultimate Movie Bot. Send me the name of any anime, movie, or series, and I will provide the files instantly.")
 
 @bot.message_handler(commands=['stats'])
 def show_stats(message):
     if message.chat.id != ADMIN_ID: return
-    bot.reply_to(message, f"📊 **ড্যাশবোর্ড:**\n👥 ইউজার: {users_col.count_documents({})}\n🎬 ফাইল: {files_col.count_documents({})}", parse_mode="Markdown")
+    bot.reply_to(message, f"📊 **Admin Dashboard:**\n👥 Total Users: {users_col.count_documents({})}\n🎬 Total Files: {files_col.count_documents({})}", parse_mode="Markdown")
 
 @bot.message_handler(content_types=['video', 'document'])
 def index_files(message):
@@ -106,7 +106,7 @@ def index_files(message):
         btn_name = f"🎬 {display_name[:20]}"
 
     files_col.update_one({"file_id": file_id}, {"$set": {"file_name": display_name, "btn_name": btn_name, "file_id": file_id}}, upsert=True)
-    bot.reply_to(message, f"✅ সেভ হয়েছে: {btn_name}")
+    bot.reply_to(message, f"✅ Successfully saved: {btn_name}")
 
 @bot.message_handler(commands=['post'])
 def custom_channel_post(message):
@@ -116,7 +116,7 @@ def custom_channel_post(message):
         name = content[0].strip()
         eps = content[1].strip() if len(content) > 1 else "New Episodes Added"
         deep_link = get_deep_link(name)
-        post_text = f"🎬 **নতুন আপলোড চলে এসেছে!**\n\n📌 **নাম:** {name}\n▶️ **এপিসোড:** {eps}\n\n👇 **এক ক্লিকে ডাউনলোড করুন বা দেখুন:**\n👉 **[এখানে ক্লিক করুন]({deep_link})**"
+        post_text = f"🎬 **New Release Available!**\n\n📌 **Title:** {name}\n▶️ **Episodes:** {eps}\n\n👇 **Download or Watch Online:**\n👉 **[Click Here to Watch]({deep_link})**"
         
         tmdb_url = f"https://api.themoviedb.org/3/search/multi?api_key={TMDB_API_KEY}&query={name}&language=en-US"
         poster_url = None
@@ -128,23 +128,23 @@ def custom_channel_post(message):
 
         if poster_url: bot.send_photo(CHANNEL_USERNAME, poster_url, caption=post_text, parse_mode="Markdown")
         else: bot.send_message(CHANNEL_USERNAME, post_text, parse_mode="Markdown", disable_web_page_preview=True)
-        bot.reply_to(message, "✅ চ্যানেলে ছবিসহ পোস্ট করা হয়েছে!")
-    except: bot.reply_to(message, "⚠️ ফরম্যাট: `/post মুভির নাম | S01 E01-E12`")
+        bot.reply_to(message, "✅ Posted to channel successfully!")
+    except: bot.reply_to(message, "⚠️ Invalid Format! Please use:\n`/post Movie Name | S01 E01-E12`")
 
 @bot.message_handler(commands=['broadcast'])
 def broadcast_message(message):
     if message.chat.id != ADMIN_ID or not message.reply_to_message: return
     movie_name = message.text.replace('/broadcast', '').strip()
-    bot.reply_to(message, "🚀 ব্রডকাস্ট শুরু হয়েছে...")
+    bot.reply_to(message, "🚀 Broadcasting started...")
     for user in users_col.find():
         try:
             if movie_name and message.reply_to_message.content_type == 'photo':
                 deep_link = get_deep_link(movie_name)
-                caption = f"🎬 **নতুন রিলিজ!**\n\n📌 **নাম:** {movie_name}\n\n👇 **ক্লিক করে এখনই দেখুন:**\n👉 **[{movie_name}]({deep_link})**"
+                caption = f"🎬 **New Release!**\n\n📌 **Title:** {movie_name}\n\n👇 **Click the link below to watch now:**\n👉 **[{movie_name}]({deep_link})**"
                 bot.send_photo(user['user_id'], message.reply_to_message.photo[-1].file_id, caption=caption, parse_mode="Markdown")
             else: bot.copy_message(user['user_id'], message.chat.id, message.reply_to_message.message_id)
         except: pass
-    bot.send_message(ADMIN_ID, "✅ ব্রডকাস্ট সফল হয়েছে!")
+    bot.send_message(ADMIN_ID, "✅ Broadcast completed successfully!")
 
 @bot.message_handler(commands=['done'])
 def notify_user(message):
@@ -154,15 +154,15 @@ def notify_user(message):
         user_id = int(parts[1])
         movie_name = parts[2]
         deep_link = get_deep_link(movie_name)
-        noti_text = f"🎉 **সুখবর!**\n\nআপনি যে **{movie_name}** রিকোয়েস্ট করেছিলেন, সেটি আপলোড করা হয়েছে!\n\n👇 এক ক্লিকে এখনই দেখুন:\n👉 **[এখানে ক্লিক করুন]({deep_link})**"
+        noti_text = f"🎉 **Great News!**\n\nThe movie **{movie_name}** you requested has been uploaded!\n\n👇 Click below to watch it now:\n👉 **[Click Here to Watch]({deep_link})**"
         bot.send_message(user_id, noti_text, parse_mode="Markdown")
-        bot.reply_to(message, "✅ ইউজারকে জানানো হয়েছে!")
-    except: bot.reply_to(message, "⚠️ ফরম্যাট: `/done UserID মুভির নাম`")
+        bot.reply_to(message, "✅ User has been notified successfully!")
+    except: bot.reply_to(message, "⚠️ Invalid Format! Please use:\n`/done UserID Movie Name`")
 
 @bot.message_handler(commands=['list', 'menu'])
 def show_catalog(message):
     if not is_subscribed(message.chat.id):
-        bot.reply_to(message, f"❌ **আগে চ্যানেলে জয়েন করুন!**\n👉 {CHANNEL_USERNAME}")
+        bot.reply_to(message, f"❌ **Please join our channel first to use the bot!**\n👉 {CHANNEL_USERNAME}")
         return
     try:
         all_files = files_col.find()
@@ -173,18 +173,19 @@ def show_catalog(message):
             compare_key = re.sub(r'[^a-zA-Z0-9]', '', clean_name.lower())
             if compare_key and compare_key not in unique_movies: unique_movies[compare_key] = clean_name
         if not unique_movies:
-            bot.reply_to(message, "🚫 কোনো মুভি নেই।")
+            bot.reply_to(message, "🚫 No movies uploaded yet.")
             return
-        catalog_text = "📚 **আমাদের কালেকশন:**\n\n"
+        catalog_text = "📚 **Our Complete Collection:**\n\n"
         for m in sorted(unique_movies.values()):
             catalog_text += f"🍿 **[{m}]({get_deep_link(m)})**\n"
+        catalog_text += "\n💡 *Tap on any name to get the files instantly!*"
         bot.send_message(message.chat.id, catalog_text, parse_mode="Markdown", disable_web_page_preview=True)
     except: pass
 
 @bot.message_handler(func=lambda message: True)
 def search_logic(message):
     if not is_subscribed(message.chat.id):
-        bot.reply_to(message, f"❌ **আগে চ্যানেলে জয়েন করুন!**\n👉 {CHANNEL_USERNAME}")
+        bot.reply_to(message, f"❌ **Please join our channel first to use the bot!**\n👉 {CHANNEL_USERNAME}")
         return
     query = message.text.lower()
     search_query = query.split(" season")[0].split(" episode")[0].split(" s0")[0].strip()
@@ -196,32 +197,32 @@ def search_logic(message):
         if tmdb_res.get('results'):
             item = tmdb_res['results'][0]
             title = item.get('title') or item.get('name')
-            caption = f"🎬 **Title:** {title}\n⭐ **Rating:** {item.get('vote_average', 'N/A')}/10"
+            caption = f"🎬 **Title:** {title}\n⭐ **Rating:** {item.get('vote_average', 'N/A')}/10\n\n👇 **Select your episode below:**"
             markup = telebot.types.InlineKeyboardMarkup(row_width=2) 
-            buttons = [telebot.types.InlineKeyboardButton(f.get('btn_name', f"📥 {f['file_name'][:15]}"), callback_data=str(f['_id'])) for f in db_results] if db_results else [telebot.types.InlineKeyboardButton("🙋‍♂️ রিকোয়েস্ট করুন", callback_data=f"req_{search_query[:20]}")]
+            buttons = [telebot.types.InlineKeyboardButton(f.get('btn_name', f"📥 {f['file_name'][:15]}"), callback_data=str(f['_id'])) for f in db_results] if db_results else [telebot.types.InlineKeyboardButton("🙋‍♂️ Request this Movie", callback_data=f"req_{search_query[:20]}")]
             markup.add(*buttons)
             poster_path = item.get('poster_path')
             if poster_path: bot.send_photo(message.chat.id, f"https://image.tmdb.org/t/p/w500{poster_path}", caption=caption, reply_markup=markup, parse_mode="Markdown")
             else: bot.send_message(message.chat.id, caption, reply_markup=markup, parse_mode="Markdown")
-        else: bot.reply_to(message, "😔 কিছু খুঁজে পাইনি।")
+        else: bot.reply_to(message, "😔 Sorry, couldn't find anything matching your query.")
     except: pass
 
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callbacks(call):
     if call.data.startswith("req_"):
-        bot.send_message(ADMIN_ID, f"🔔 **নতুন রিকোয়েস্ট:**\nID: `{call.message.chat.id}`\nমুভি: {call.data.split('_')[1]}")
-        bot.answer_callback_query(call.id, "✅ রিকোয়েস্ট পাঠানো হয়েছে!", show_alert=True)
+        bot.send_message(ADMIN_ID, f"🔔 **New Movie Request:**\nUser ID: `{call.message.chat.id}`\nTitle: {call.data.split('_')[1]}")
+        bot.answer_callback_query(call.id, "✅ Your request has been sent to the Admin!", show_alert=True)
     elif call.data != "none":
         try:
             file_data = files_col.find_one({"_id": ObjectId(call.data)})
-            if file_data: bot.send_document(call.message.chat.id, file_data['file_id'], caption=f"🎬 **{file_data['file_name']}**\n\n🍿 উপভোগ করুন!", parse_mode="Markdown")
-        except: bot.answer_callback_query(call.id, "লিংক কাজ করছে না!", show_alert=True)
+            if file_data: bot.send_document(call.message.chat.id, file_data['file_id'], caption=f"🎬 **{file_data['file_name']}**\n\n🍿 Enjoy your movie! Powered by @RAnimeTV", parse_mode="Markdown")
+        except: bot.answer_callback_query(call.id, "⚠️ This link is no longer valid!", show_alert=True)
 
 @app.route('/')
-def index(): return "🚀 Riyaj's Pro Bot is Running!"
+def index(): return "🚀 Riyaj's Pro Bot is Running in English!"
 
 def run_bot():
-    set_bot_commands() # <--- বট চালু হওয়ার সময় মেনু সেট হবে
+    set_bot_commands() 
     try: bot.remove_webhook()
     except: pass
     while True:
