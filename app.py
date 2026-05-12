@@ -8,7 +8,7 @@ from pymongo import MongoClient
 from bson.objectid import ObjectId
 from flask import Flask
 
-print("🚀 Ultimate Pro Server V3.2 (Advanced Garbage Cleaner) is Running...")
+print("🚀 Ultimate Pro Server V3.3 (With Delete Command) is Running...")
 
 # --- Credentials ---
 BOT_TOKEN = '8351560947:AAEuuIpuOqU9rLJpwJfVrudwsrGNW-iXUWA'
@@ -41,6 +41,7 @@ def set_bot_commands():
             telebot.types.BotCommand("stats", "View admin dashboard 📊"),
             telebot.types.BotCommand("post", "Post to channel 🖼"),
             telebot.types.BotCommand("broadcast", "Broadcast message 📢"),
+            telebot.types.BotCommand("delete", "Delete wrong files 🗑️"),
             telebot.types.BotCommand("done", "Notify user about request ✅")
         ]
         bot.set_my_commands(admin_cmds, scope=telebot.types.BotCommandScopeChat(ADMIN_ID))
@@ -57,16 +58,13 @@ def is_subscribed(user_id):
         return status in ['creator', 'administrator', 'member']
     except: return False
 
-# 🧹 ADVANCED GARBAGE CLEANER 🧹
 def clean_name(text):
-    # রিমুভ ট্যাগস যেমন [@SBANIME] বা [720p]
     text = re.sub(r'\[.*?\]', ' ', text) 
     text = re.sub(r'@[a-zA-Z0-9_]+', ' ', text)
     text = re.sub(r'https?://\S+', ' ', text)
-    # রিমুভ সাল (যেমন: (2019) বা 2025)
     text = re.sub(r'\(\d{4}\)', ' ', text)
-    # রিমুভ ফালতু কোয়ালিটি ও ফরম্যাট ওয়ার্ডস
-    junk_words = r'(?i)(1080p|720p|480p|hevc|10bit|amzn|web-?dl|bluray|brrip|hindi audio|hindi dub|dual audio|esub|mkv|mp4|full movie|in official|official)'
+    # Added "title" to junk words to prevent that specific bug
+    junk_words = r'(?i)(title|1080p|720p|480p|hevc|10bit|amzn|web-?dl|bluray|brrip|hindi audio|hindi dub|dual audio|esub|mkv|mp4|full movie|in official|official)'
     text = re.sub(junk_words, ' ', text)
     
     clean = re.sub(r'[^a-zA-Z0-9]', ' ', text)
@@ -87,6 +85,24 @@ def send_welcome(message):
 def show_stats(message):
     if message.chat.id != ADMIN_ID: return
     bot.reply_to(message, f"📊 **Admin Dashboard:**\n👥 Total Users: {users_col.count_documents({})}\n🎬 Total Files: {files_col.count_documents({})}", parse_mode="Markdown")
+
+# 🗑️ NEW: DELETE COMMAND 🗑️
+@bot.message_handler(commands=['delete', 'del'])
+def delete_movie(message):
+    if message.chat.id != ADMIN_ID: return
+    query = message.text.replace('/delete', '').replace('/del', '').strip()
+    
+    if not query:
+        bot.reply_to(message, "⚠️ **ফরম্যাট ভুল!**\nএভাবে লিখুন: `/delete মুভির নাম`\n*(যে নামটা /list এ ডুপ্লিকেট দেখাচ্ছে, সেটা হুবহু কপি করে পেস্ট করুন)*", parse_mode="Markdown")
+        return
+
+    clean_query = clean_name(query).lower()
+    result = files_col.delete_many({"base_title": clean_query})
+
+    if result.deleted_count > 0:
+        bot.reply_to(message, f"✅ **সাকসেস!** ডাটাবেস থেকে '{query}' নামের {result.deleted_count} টি ফাইল ডিলিট করা হয়েছে।", parse_mode="Markdown")
+    else:
+        bot.reply_to(message, f"😔 ডাটাবেসে '{query}' নামের কোনো ফাইল পাওয়া যায়নি। নামটা /list থেকে ঠিকমতো কপি করে পেস্ট করুন।")
 
 @bot.message_handler(commands=['post'])
 def custom_channel_post(message):
@@ -294,7 +310,7 @@ def handle_callbacks(call):
         bot.answer_callback_query(call.id, "✅ Request sent to Admin!", show_alert=True)
 
 @app.route('/')
-def index(): return "🚀 V3.2 Pro Active!"
+def index(): return "🚀 V3.3 Pro Active!"
 
 def run_bot():
     set_bot_commands()
