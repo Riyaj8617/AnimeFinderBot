@@ -8,14 +8,15 @@ from pymongo import MongoClient
 from bson.objectid import ObjectId
 from flask import Flask
 
-print("🚀 Ultimate Pro Server is Running...")
+print("🚀 Ultimate Pro Server V2 is Running...")
 
 # --- ক্রেডেনশিয়ালস ---
 BOT_TOKEN = '8351560947:AAEuuIpuOqU9rLJpwJfVrudwsrGNW-iXUWA'
 TMDB_API_KEY = 'eac1f699fd04bfed4063efc4e9166925'
 MONGO_URI = 'mongodb+srv://riya8617:Riyaj%40786@cluster0.lhmz2q8.mongodb.net/?appName=Cluster0'
 ADMIN_ID = 7141977665 
-CHANNEL_USERNAME = '@RAnimeTV' # আপনার চ্যানেলের ইউজারনেম
+CHANNEL_USERNAME = '@RAnimeTV'
+BOT_USERNAME = 'RiyajFinderBot'
 
 client = MongoClient(MONGO_URI)
 db = client['RiyajMovieBot']
@@ -26,44 +27,45 @@ searches_col = db['searches']
 bot = telebot.TeleBot(BOT_TOKEN)
 app = Flask(__name__)
 
-# --- Force Subscribe চেকার ---
 def is_subscribed(user_id):
     if user_id == ADMIN_ID: return True
     try:
         status = bot.get_chat_member(CHANNEL_USERNAME, user_id).status
         return status in ['creator', 'administrator', 'member']
-    except:
-        return False
+    except: return False
 
+# --- 🎯 Deep Link & Start ---
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     users_col.update_one({"user_id": message.chat.id}, {"$set": {"user_id": message.chat.id}}, upsert=True)
+    
+    # Deep Link Checker (এক ক্লিকে সার্চ)
+    text_parts = message.text.split()
+    if len(text_parts) > 1:
+        query = " ".join(text_parts[1:]).replace("_", " ")
+        message.text = query # বটের ব্রেনকে বোকা বানিয়ে সার্চ করানো
+        search_logic(message)
+        return
+        
     bot.reply_to(message, "স্বাগতম! 🎬\nআমি আপনার প্রো মুভি বট। মুভি বা সিরিজের নাম লিখুন, আমি ফাইল দিয়ে দেব।")
 
-# --- 📊 Admin Dashboard ---
 @bot.message_handler(commands=['stats'])
 def show_stats(message):
     if message.chat.id != ADMIN_ID: return
-    total_users = users_col.count_documents({})
-    total_files = files_col.count_documents({})
-    stat_text = f"📊 **বট ড্যাশবোর্ড:**\n\n👥 মোট ইউজার: {total_users} জন\n🎬 মোট আপলোড করা ফাইল: {total_files} টি\n🚀 সার্ভার স্ট্যাটাস: 100% Live"
-    bot.reply_to(message, stat_text)
+    bot.reply_to(message, f"📊 **ড্যাশবোর্ড:**\n👥 ইউজার: {users_col.count_documents({})}\n🎬 ফাইল: {files_col.count_documents({})}", parse_mode="Markdown")
 
-# --- 🎥 ফাইল ইনডেক্সিং এবং অটো-পোস্ট ---
+# --- 📥 ফাইল অটো-সেভ (স্প্যাম পোস্ট বন্ধ করা হলো) ---
 @bot.message_handler(content_types=['video', 'document'])
 def index_files(message):
     if message.chat.id != ADMIN_ID: return
-    
     raw_text = message.caption if message.caption else (message.document.file_name if message.document else "Unknown")
     file_id = message.video.file_id if message.video else message.document.file_id
     
-    # সিজন এবং এপিসোড নম্বর খোঁজা
     s_match = re.search(r'(?i)(?:season|s)\s*[:\-]?\s*(\d+)', raw_text)
     e_match = re.search(r'(?i)(?:episode|ep|e)\s*[:\-]?\s*(\d+)', raw_text)
     s_num = int(s_match.group(1)) if s_match else None
     e_num = int(e_match.group(1)) if e_match else None
     
-    # নাম ক্লিন করা (অন্য চ্যানেলের নাম এবং ব্র্যাকেট সরানো)
     title_part = re.split(r'(?i)season|episode|ep|s\d+', raw_text)[0]
     title_part = re.sub(r'@[a-zA-Z0-9_]+', '', title_part)
     clean_title = title_part.replace('❖', '').replace('▶', '').replace('✅', '').replace('[', '').replace(']', '').strip()
@@ -78,18 +80,43 @@ def index_files(message):
         display_name = clean_title[:30]
         btn_name = f"🎬 {display_name[:20]}"
 
-    files_col.update_one(
-        {"file_id": file_id}, 
-        {"$set": {"file_name": display_name, "btn_name": btn_name, "file_id": file_id}}, 
-        upsert=True
-    )
-    bot.reply_to(message, f"✅ স্মার্ট অটো-সেভ সম্পন্ন!\nবাটনে দেখাবে: {btn_name}")
-    
-    # --- 📢 Auto-Post (চ্যানেলে স্বয়ংক্রিয় পোস্ট) ---
+    files_col.update_one({"file_id": file_id}, {"$set": {"file_name": display_name, "btn_name": btn_name, "file_id": file_id}}, upsert=True)
+    bot.reply_to(message, f"✅ সেভ হয়েছে: {btn_name}")
+
+# --- 📢 স্মার্ট চ্যানেল পোস্টার (অ্যাডমিন কমান্ড) ---
+@bot.message_handler(commands=['post'])
+def custom_channel_post(message):
+    if message.chat.id != ADMIN_ID: return
     try:
-        post_text = f"🎬 **নতুন আপলোড চলে এসেছে!**\n\n📌 **নাম:** {display_name}\n\n👇 আমাদের বটে গিয়ে এখনই ডাউনলোড করুন বা দেখুন!\n👉 @RiyajFinderBot"
-        bot.send_message(CHANNEL_USERNAME, post_text, parse_mode="Markdown")
-    except: pass
+        content = message.text.replace('/post ', '').split('|')
+        name = content[0].strip()
+        eps = content[1].strip() if len(content) > 1 else "All New Episodes"
+        
+        # ম্যাজিক ডিপ-লিংক তৈরি
+        deep_link = f"https://t.me/{BOT_USERNAME}?start={name.replace(' ', '_')}"
+        post_text = f"🎬 **নতুন আপলোড চলে এসেছে!**\n\n📌 **নাম:** {name}\n▶️ **এপিসোড:** {eps}\n\n👇 **এক ক্লিকে ডাউনলোড করুন বা দেখুন:**\n👉 **[এখানে ক্লিক করুন]({deep_link})**"
+        
+        bot.send_message(CHANNEL_USERNAME, post_text, parse_mode="Markdown", disable_web_page_preview=True)
+        bot.reply_to(message, "✅ চ্যানেলে সুন্দরভাবে পোস্ট করা হয়েছে!")
+    except:
+        bot.reply_to(message, "⚠️ ফরম্যাট ভুল! এভাবে লিখুন:\n`/post Grand Blue | S01 E01-E12`")
+
+# --- 🎉 রিকোয়েস্ট ফুলফিল নোটিফিকেশন ---
+@bot.message_handler(commands=['done'])
+def notify_user(message):
+    if message.chat.id != ADMIN_ID: return
+    try:
+        parts = message.text.split(' ', 2)
+        user_id = int(parts[1])
+        movie_name = parts[2]
+        
+        deep_link = f"https://t.me/{BOT_USERNAME}?start={movie_name.replace(' ', '_')}"
+        noti_text = f"🎉 **সুখবর!**\n\nআপনি যে **{movie_name}** রিকোয়েস্ট করেছিলেন, সেটি আপলোড করা হয়েছে!\n\n👇 এক ক্লিকে এখনই দেখুন:\n👉 **[এখানে ক্লিক করুন]({deep_link})**"
+        
+        bot.send_message(user_id, noti_text, parse_mode="Markdown")
+        bot.reply_to(message, "✅ ইউজারকে নোটিফিকেশন পাঠানো হয়েছে!")
+    except:
+        bot.reply_to(message, "⚠️ ফরম্যাট ভুল! এভাবে লিখুন:\n`/done UserID Movie Name`")
 
 @bot.message_handler(commands=['broadcast'])
 def broadcast_message(message):
@@ -100,35 +127,41 @@ def broadcast_message(message):
         except: pass
     bot.send_message(ADMIN_ID, "✅ ব্রডকাস্ট সফল হয়েছে!")
 
-# --- 📚 মুভি ক্যাটালগ ---
+# --- 📚 সুপার ক্লিন লিস্ট ---
 @bot.message_handler(commands=['list', 'menu'])
 def show_catalog(message):
     if not is_subscribed(message.chat.id):
-        bot.reply_to(message, f"❌ **আগে আমাদের চ্যানেলে জয়েন করুন!**\n\nমুভি দেখতে হলে অবশ্যই চ্যানেলে জয়েন থাকতে হবে।\n\n👉 **চ্যানেল:** {CHANNEL_USERNAME}\n\nজয়েন করার পর আবার /list লিখুন।")
+        bot.reply_to(message, f"❌ **আগে আমাদের চ্যানেলে জয়েন করুন!**\n👉 {CHANNEL_USERNAME}")
         return
-        
     bot.send_chat_action(message.chat.id, 'typing')
     try:
         all_files = files_col.find()
-        unique_movies = set()
+        unique_movies = {}
         for f in all_files:
-            name = re.split(r'(?i) S\d+| Ep \d+', f.get('file_name', ''))[0].strip()
-            if name: unique_movies.add(name)
-            
+            raw_name = f.get('file_name', '')
+            clean_name = re.split(r'(?i) S\d+| Ep \d+', raw_name)[0].strip()
+            # ডাবল নাম আটকানোর জন্য স্পেশাল কি-ওয়ার্ড
+            compare_key = re.sub(r'[^a-zA-Z0-9]', '', clean_name.lower())
+            if compare_key and compare_key not in unique_movies:
+                unique_movies[compare_key] = clean_name
+                
         if not unique_movies:
             bot.reply_to(message, "🚫 এখনো কোনো মুভি আপলোড করা হয়নি।")
             return
             
-        catalog_text = "📚 **আমাদের কালেকশন:**\n\n" + "\n".join([f"🍿 **{m}**" for m in sorted(unique_movies)])
-        catalog_text += "\n\n💡 *নাম লিখে সার্চ করলে সব ফাইল পেয়ে যাবেন!*"
-        bot.send_message(message.chat.id, catalog_text, parse_mode="Markdown")
+        catalog_text = "📚 **আমাদের কালেকশন:**\n\n"
+        for m in sorted(unique_movies.values()):
+            deep_link = f"https://t.me/{BOT_USERNAME}?start={m.replace(' ', '_')}"
+            catalog_text += f"🍿 **[{m}]({deep_link})**\n"
+            
+        catalog_text += "\n💡 *যেকোনো নামের ওপর ক্লিক করলেই ফাইল চলে আসবে!*"
+        bot.send_message(message.chat.id, catalog_text, parse_mode="Markdown", disable_web_page_preview=True)
     except: pass
 
-# --- 🔍 সার্চ লজিক ---
 @bot.message_handler(func=lambda message: True)
 def search_logic(message):
     if not is_subscribed(message.chat.id):
-        bot.reply_to(message, f"❌ **আগে আমাদের চ্যানেলে জয়েন করুন!**\n\nডাউনলোড করতে হলে অবশ্যই চ্যানেলে জয়েন থাকতে হবে।\n\n👉 **চ্যানেল:** {CHANNEL_USERNAME}")
+        bot.reply_to(message, f"❌ **আগে আমাদের চ্যানেলে জয়েন করুন!**\n👉 {CHANNEL_USERNAME}")
         return
 
     query = message.text.lower()
@@ -166,11 +199,10 @@ def search_logic(message):
             bot.reply_to(message, "দুঃখিত 😔, কিছু খুঁজে পাইনি।")
     except: pass
 
-# --- 📥 ফাইল পাঠানো এবং রিকোয়েস্ট হ্যান্ডলিং ---
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callbacks(call):
     if call.data.startswith("req_"):
-        bot.send_message(ADMIN_ID, f"🔔 **নতুন মুভি রিকোয়েস্ট:**\nইউজার: `{call.message.chat.id}`\nনাম: {call.data.split('_')[1]}")
+        bot.send_message(ADMIN_ID, f"🔔 **নতুন মুভি রিকোয়েস্ট:**\nইউজার ID: `{call.message.chat.id}`\nমুভি: {call.data.split('_')[1]}")
         bot.answer_callback_query(call.id, "✅ আপনার রিকোয়েস্ট অ্যাডমিনের কাছে পাঠানো হয়েছে!", show_alert=True)
         return
 
