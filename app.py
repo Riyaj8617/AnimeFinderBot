@@ -36,21 +36,19 @@ def index_files(message):
     raw_text = message.caption if message.caption else (message.document.file_name if message.document else "Unknown")
     file_id = message.video.file_id if message.video else message.document.file_id
     
-    # 🧠 AI Brain: ক্যাপশন থেকে Season এবং Episode খোঁজার কোড
+    # AI Brain: Season and Episode extract
     s_match = re.search(r'(?i)(?:season|s)\s*[:\-]?\s*(\d+)', raw_text)
     e_match = re.search(r'(?i)(?:episode|ep|e)\s*[:\-]?\s*(\d+)', raw_text)
     
     s_num = int(s_match.group(1)) if s_match else None
     e_num = int(e_match.group(1)) if e_match else None
     
-    
-    # অপ্রয়োজনীয় চিহ্ন বাদ দিয়ে শুধু আসল নামটা নেওয়া
-        title_part = re.split(r'(?i)season|episode|ep|s\d+', raw_text)[0]
+    # Remove @username and clean title
+    title_part = re.split(r'(?i)season|episode|ep|s\d+', raw_text)[0]
     title_part = re.sub(r'@[a-zA-Z0-9_]+', '', title_part)
     clean_title = title_part.replace('❖', '').replace('▶', '').replace('✅', '').strip()
-
     
-    # বাটনের নাম অটোমেটিক তৈরি করা
+    # Button Generation
     if s_num and e_num:
         display_name = f"{clean_title} S{s_num:02d} E{e_num:02d}"
         btn_name = f"📺 S{s_num:02d} E{e_num:02d}"
@@ -76,6 +74,7 @@ def broadcast_message(message):
         try: bot.copy_message(user['user_id'], message.chat.id, message.reply_to_message.message_id)
         except: pass
     bot.send_message(ADMIN_ID, "✅ ব্রডকাস্ট সফল হয়েছে!")
+
 @bot.message_handler(commands=['list', 'menu'])
 def show_catalog(message):
     bot.send_chat_action(message.chat.id, 'typing')
@@ -85,7 +84,6 @@ def show_catalog(message):
         
         for file in all_files:
             full_name = file.get('file_name', '')
-            # শুধু আসল নামটা বের করা (সিজন বা এপিসোড নম্বর বাদ দিয়ে)
             base_name = re.split(r'(?i) S\d+| Ep \d+', full_name)[0].strip()
             if base_name:
                 unique_movies.add(base_name)
@@ -103,9 +101,6 @@ def show_catalog(message):
         
     except Exception as e:
         bot.reply_to(message, "একটু সমস্যা হচ্ছে, পরে আবার চেষ্টা করুন।")
-        
-
-
 
 @bot.message_handler(func=lambda message: True)
 def search_logic(message):
@@ -118,7 +113,6 @@ def search_logic(message):
     
     try:
         tmdb_res = requests.get(tmdb_url).json()
-        # ফাইলগুলো Ep 1, Ep 2 অনুযায়ী সাজানো হবে
         db_results = list(files_col.find({"file_name": {"$regex": search_query, "$options": "i"}}).sort("file_name", 1))
         
         if tmdb_res.get('results'):
@@ -126,7 +120,6 @@ def search_logic(message):
             title = item.get('title') or item.get('name')
             caption = f"🎬 **Title:** {title}\n⭐ **Rating:** {item.get('vote_average', 'N/A')}/10\n\n👇 **আপনার পছন্দের এপিসোড সিলেক্ট করুন:**"
             
-            # ২ কলামের সুন্দর গ্রিড ডিজাইন (Netflix স্টাইল)
             markup = telebot.types.InlineKeyboardMarkup(row_width=2) 
             
             buttons = []
@@ -155,7 +148,6 @@ def send_file(call):
         try:
             file_data = files_col.find_one({"_id": ObjectId(call.data)})
             if file_data:
-                # ডাইনামিক ক্যাপশন তৈরি করা (ফাইলের আসল নামসহ)
                 file_title = file_data.get('file_name', 'Unknown File')
                 dynamic_caption = f"🎬 **{file_title}**\n\n🍿 আপনার ফাইলটি তৈরি! উপভোগ করুন।"
                 
