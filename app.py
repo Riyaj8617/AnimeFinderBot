@@ -8,7 +8,7 @@ from pymongo import MongoClient
 from bson.objectid import ObjectId
 from flask import Flask
 
-print("🚀 Ultimate Pro Server V2.4 (English Version) is Running...")
+print("🚀 Ultimate Pro Server V2.5 (Smart Hindi Dub Logic) is Running...")
 
 # --- Credentials ---
 BOT_TOKEN = '8351560947:AAEuuIpuOqU9rLJpwJfVrudwsrGNW-iXUWA'
@@ -30,7 +30,6 @@ app = Flask(__name__)
 # --- 🛠 Smart Menu Setup (English) ---
 def set_bot_commands():
     try:
-        # Commands for normal users
         user_cmds = [
             telebot.types.BotCommand("start", "Start the bot 🚀"),
             telebot.types.BotCommand("list", "View all collections 📚"),
@@ -38,7 +37,6 @@ def set_bot_commands():
         ]
         bot.set_my_commands(user_cmds)
 
-        # Commands for Admin only
         admin_cmds = [
             telebot.types.BotCommand("start", "Start the bot 🚀"),
             telebot.types.BotCommand("list", "View all collections 📚"),
@@ -111,6 +109,7 @@ def index_files(message):
 @bot.message_handler(commands=['post'])
 def custom_channel_post(message):
     if message.chat.id != ADMIN_ID: return
+    bot.send_chat_action(message.chat.id, 'typing')
     try:
         content = message.text.replace('/post ', '').split('|')
         name = content[0].strip()
@@ -164,6 +163,7 @@ def show_catalog(message):
     if not is_subscribed(message.chat.id):
         bot.reply_to(message, f"❌ **Please join our channel first to use the bot!**\n👉 {CHANNEL_USERNAME}")
         return
+    bot.send_chat_action(message.chat.id, 'typing')
     try:
         all_files = files_col.find()
         unique_movies = {}
@@ -182,6 +182,7 @@ def show_catalog(message):
         bot.send_message(message.chat.id, catalog_text, parse_mode="Markdown", disable_web_page_preview=True)
     except: pass
 
+# --- 🔍 Smart Search Logic (With Hindi Dub Warning) ---
 @bot.message_handler(func=lambda message: True)
 def search_logic(message):
     if not is_subscribed(message.chat.id):
@@ -190,17 +191,30 @@ def search_logic(message):
     query = message.text.lower()
     search_query = query.split(" season")[0].split(" episode")[0].split(" s0")[0].strip()
     searches_col.update_one({"query": search_query}, {"$inc": {"count": 1}}, upsert=True)
+    
+    bot.send_chat_action(message.chat.id, 'typing')
     tmdb_url = f"https://api.themoviedb.org/3/search/multi?api_key={TMDB_API_KEY}&query={search_query}&language=en-US"
+    
     try:
         tmdb_res = requests.get(tmdb_url).json()
         db_results = list(files_col.find({"file_name": {"$regex": search_query, "$options": "i"}}).sort("file_name", 1))
+        
         if tmdb_res.get('results'):
             item = tmdb_res['results'][0]
             title = item.get('title') or item.get('name')
-            caption = f"🎬 **Title:** {title}\n⭐ **Rating:** {item.get('vote_average', 'N/A')}/10\n\n👇 **Select your episode below:**"
-            markup = telebot.types.InlineKeyboardMarkup(row_width=2) 
-            buttons = [telebot.types.InlineKeyboardButton(f.get('btn_name', f"📥 {f['file_name'][:15]}"), callback_data=str(f['_id'])) for f in db_results] if db_results else [telebot.types.InlineKeyboardButton("🙋‍♂️ Request this Movie", callback_data=f"req_{search_query[:20]}")]
-            markup.add(*buttons)
+            
+            if db_results:
+                # If movie is in your database
+                caption = f"🎬 **Title:** {title}\n⭐ **Rating:** {item.get('vote_average', 'N/A')}/10\n\n👇 **Select your episode below:**"
+                markup = telebot.types.InlineKeyboardMarkup(row_width=2) 
+                buttons = [telebot.types.InlineKeyboardButton(f.get('btn_name', f"📥 {f['file_name'][:15]}"), callback_data=str(f['_id'])) for f in db_results]
+                markup.add(*buttons)
+            else:
+                # If movie is NOT in your database (Show Hindi Dub Warning)
+                caption = f"🎬 **Title:** {title}\n⭐ **Rating:** {item.get('vote_average', 'N/A')}/10\n\n⚠️ **Important Note:** We strictly upload **Hindi Dubbed** content. If this title does not have an official Hindi release, we won't be able to provide it.\n\n👇 *You can request it below, and we will verify its Hindi availability.*"
+                markup = telebot.types.InlineKeyboardMarkup(row_width=1) 
+                markup.add(telebot.types.InlineKeyboardButton("🙋‍♂️ Request (Hindi Dub Only)", callback_data=f"req_{search_query[:20]}"))
+
             poster_path = item.get('poster_path')
             if poster_path: bot.send_photo(message.chat.id, f"https://image.tmdb.org/t/p/w500{poster_path}", caption=caption, reply_markup=markup, parse_mode="Markdown")
             else: bot.send_message(message.chat.id, caption, reply_markup=markup, parse_mode="Markdown")
