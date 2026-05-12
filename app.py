@@ -62,7 +62,7 @@ def index_files(message):
     
     title_part = re.split(r'(?i)season|episode|ep|s\d+', raw_text)[0]
     title_part = re.sub(r'@[a-zA-Z0-9_]+', '', title_part)
-    clean_title = title_part.replace('❖', '').replace('▶', '').replace('✅', '').strip()
+    clean_title = title_part.replace('❖', '').replace('▶', '').replace('✅', '').replace('[', '').replace(']', '').strip()
     
     if s_num and e_num:
         display_name = f"{clean_title} S{s_num:02d} E{e_num:02d}"
@@ -79,7 +79,8 @@ def index_files(message):
     
     # --- 📢 Auto-Post ---
     try:
-        bot.send_message(CHANNEL_USERNAME, f"🎬 **নতুন আপলোড চলে এসেছে!**\n\n📌 **নাম:** {display_name}\n\n👇 আমাদের বটে গিয়ে এখনই ডাউনলোড করুন বা দেখুন!\n👉 @AnimeFinderBot")
+    bot.send_message(CHANNEL_USERNAME, f"🎬 **নতুন আপলোড চলে এসেছে!**\n\n📌 **নাম:** {display_name}\n\n👇 আমাদের বটে গিয়ে এখনই ডাউনলোড করুন বা দেখুন!\n👉 @RiyajFinderBot", parse_mode="Markdown")
+        
     except: pass
 
 @bot.message_handler(commands=['broadcast'])
