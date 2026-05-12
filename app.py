@@ -44,7 +44,8 @@ def index_files(message):
     e_num = int(e_match.group(1)) if e_match else None
     
     # অপ্রয়োজনীয় চিহ্ন বাদ দিয়ে শুধু আসল নামটা নেওয়া
-    title_part = re.split(r'(?i)season|episode|ep|s\d+', raw_text)[0]
+        title_part = re.split(r'(?i)season|episode|ep|s\d+', raw_text)[0]
+    title_part = re.sub(r'@[a-zA-Z0-9_]+', '', title_part)
     clean_title = title_part.replace('❖', '').replace('▶', '').replace('✅', '').strip()
     
     # বাটনের নাম অটোমেটিক তৈরি করা
