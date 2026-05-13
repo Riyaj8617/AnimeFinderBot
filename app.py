@@ -7,8 +7,9 @@ import re
 from pymongo import MongoClient
 from bson.objectid import ObjectId
 from flask import Flask
+import logging
 
-print("🚀 Ultimate Flagship Server V3.8 (Pro English Edition) is Running...")
+print("🚀 Ultimate Flagship Server V3.8.1 (Perfect Syntax Edition) is Running...")
 
 # --- Credentials ---
 BOT_TOKEN = '8351560947:AAEuuIpuOqU9rLJpwJfVrudwsrGNW-iXUWA'
@@ -131,7 +132,6 @@ def show_catalog(message):
         bot.send_message(message.chat.id, catalog_text, parse_mode="Markdown", disable_web_page_preview=True)
     except: pass
 
-# ✏️ NEW: SMART RENAME COMMAND
 @bot.message_handler(commands=['rename'])
 def rename_movie(message):
     if message.chat.id != ADMIN_ID: return
@@ -316,7 +316,6 @@ def search_logic(message):
         
         tmdb_res = requests.get(f"https://api.themoviedb.org/3/search/multi?api_key={TMDB_API_KEY}&query={query}", timeout=10).json()
         
-        # 🧠 LOCAL DB FALLBACK ENGINE (Fixes the 'No Results Found' on messy names)
         if tmdb_res.get('results'):
             item = tmdb_res['results'][0]
             title, is_movie = item.get('title') or item.get('name'), item.get('media_type') == 'movie'
@@ -406,3 +405,22 @@ def handle_callbacks(call):
             markup = telebot.types.InlineKeyboardMarkup(row_width=2)
             markup.add(*[telebot.types.InlineKeyboardButton(f"Season {s}", callback_data=f"list_{data[1]}_{s}") for s in sorted(list(set(f['s_num'] for f in db_res)))])
             bot.edit_message_caption("👇 **Select Season:**", call.message.chat.id, call.message.message_id, reply_markup=markup)
+
+        elif data[0] == "req":
+            bot.send_message(ADMIN_ID, f"🔔 **New Request:**\nUser: `{call.message.chat.id}`\nTitle: {data[1]}")
+            bot.answer_callback_query(call.id, "✅ Request sent to Admin!", show_alert=True)
+    except Exception as e: print(f"Callback Error: {e}")
+
+@app.route('/')
+def index(): return "🚀 V3.8.1 FLAGSHIP Active!"
+
+def run_bot():
+    set_bot_commands()
+    try: bot.remove_webhook()
+    except: pass
+    import logging
+    bot.infinity_polling(timeout=60, logger_level=logging.ERROR)
+
+if __name__ == "__main__":
+    threading.Thread(target=run_bot).start()
+    app.run(host="0.0.0.0", port=int(os.environ.get('PORT', 10000)))
