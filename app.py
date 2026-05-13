@@ -8,7 +8,7 @@ from pymongo import MongoClient
 from bson.objectid import ObjectId
 from flask import Flask
 
-print("🚀 Ultimate Flagship Server V3.7 (Zero-Bug Pro Max) is Running...")
+print("🚀 Ultimate Flagship Server V3.8 (Pro English Edition) is Running...")
 
 # --- Credentials ---
 BOT_TOKEN = '8351560947:AAEuuIpuOqU9rLJpwJfVrudwsrGNW-iXUWA'
@@ -32,10 +32,9 @@ app = Flask(__name__)
 if not settings_col.find_one({"id": "bot_settings"}):
     settings_col.insert_one({"id": "bot_settings", "auto_delete_min": 0})
 
-# 🛠️ FORCED MENU UPDATE SYSTEM (FLAGSHIP FIX)
+# 🛠️ FORCED MENU UPDATE SYSTEM
 def set_bot_commands():
     try:
-        # Clear old cached commands
         bot.delete_my_commands(scope=telebot.types.BotCommandScopeDefault())
         bot.delete_my_commands(scope=telebot.types.BotCommandScopeChat(ADMIN_ID))
         
@@ -51,6 +50,7 @@ def set_bot_commands():
             telebot.types.BotCommand("stats", "Admin Dashboard 📊"),
             telebot.types.BotCommand("topsearch", "View Viral Searches 🔥"),
             telebot.types.BotCommand("settime", "Set Auto-Delete (Minutes) ⏰"),
+            telebot.types.BotCommand("rename", "Rename Movies ✏️"),
             telebot.types.BotCommand("delete", "Manage Database 🗑️"),
             telebot.types.BotCommand("post", "Post to Channel 🖼"),
             telebot.types.BotCommand("broadcast", "Broadcast Message 📢"),
@@ -94,7 +94,7 @@ def delete_timer(chat_id, message_id, minutes):
     except: pass
 
 # ==========================================
-# 1. COMMAND HANDLERS (PRIORITY 1)
+# 1. COMMAND HANDLERS
 # ==========================================
 
 @bot.message_handler(commands=['start'])
@@ -105,7 +105,7 @@ def send_welcome(message):
         if len(text_parts) > 1:
             query = " ".join(text_parts[1:]).replace("_", " ")
             message.text = query 
-            search_logic(message) # Redirect to search if deep link
+            search_logic(message) 
             return
         bot.reply_to(message, "Welcome! 🎬\nI am your Ultimate Movie Bot. Send me the exact name of any anime, movie, or series, and I will provide the files instantly.")
     except Exception as e: print(e)
@@ -130,6 +130,37 @@ def show_catalog(message):
         for m in sorted(unique_movies.values()): catalog_text += f"🍿 **[{m}]({get_deep_link(m)})**\n"
         bot.send_message(message.chat.id, catalog_text, parse_mode="Markdown", disable_web_page_preview=True)
     except: pass
+
+# ✏️ NEW: SMART RENAME COMMAND
+@bot.message_handler(commands=['rename'])
+def rename_movie(message):
+    if message.chat.id != ADMIN_ID: return
+    try:
+        content = message.text.replace('/rename', '', 1).strip().split('|')
+        if len(content) != 2:
+            bot.reply_to(message, "⚠️ **Invalid Format!**\nUse: `/rename Old Name | New Name`")
+            return
+
+        old_name, new_name = content[0].strip(), content[1].strip()
+        clean_old = clean_name(old_name).lower()
+        clean_new = clean_name(new_name).lower()
+
+        docs = list(files_col.find({"base_title": clean_old}))
+
+        if not docs:
+            bot.reply_to(message, f"😔 No files found matching: `{old_name}`")
+            return
+
+        updated_count = 0
+        for doc in docs:
+            s_num, e_num = doc.get('s_num', 1), doc.get('e_num')
+            display_name = f"{new_name.title()} S{s_num:02d} E{e_num:02d}" if e_num else new_name.title()
+            files_col.update_one({"_id": doc["_id"]}, {"$set": {"base_title": clean_new, "file_name": display_name}})
+            updated_count += 1
+
+        bot.reply_to(message, f"✅ **Success!** {updated_count} files renamed to `{new_name.title()}`.")
+    except Exception as e:
+        bot.reply_to(message, f"⚠️ Error: {str(e)}")
 
 @bot.message_handler(commands=['ban'])
 def ban_user(message):
@@ -191,13 +222,13 @@ def show_delete_menu(message):
                 unique_movies[compare_key] = f.get('base_title', '').title()
         
         if not unique_movies:
-            bot.reply_to(message, "🚫 ডাটাবেস সম্পূর্ণ ফাঁকা। ডিলিট করার কিছু নেই।")
+            bot.reply_to(message, "🚫 The database is empty. Nothing to delete.")
             return
 
         markup = telebot.types.InlineKeyboardMarkup(row_width=1)
         for key, name in unique_movies.items():
             markup.add(telebot.types.InlineKeyboardButton(f"🗑️ Delete: {name}", callback_data=f"askdel_{key[:20]}"))
-        bot.send_message(message.chat.id, "❌ **Admin Delete Panel**\nকোন মুভিটি ডিলিট করবেন?", reply_markup=markup, parse_mode="Markdown")
+        bot.send_message(message.chat.id, "❌ **Admin Delete Panel**\nSelect a movie to delete:", reply_markup=markup, parse_mode="Markdown")
     except: pass
 
 @bot.message_handler(commands=['post'])
@@ -244,7 +275,6 @@ def index_files(message):
         raw_text = message.caption if message.caption else (message.document.file_name if message.document else "Unknown")
         file_id = message.video.file_id if message.video else message.document.file_id
         
-        # Flawless Scanner Logic
         s_m = re.search(r'(?i)(?:season|s|season\s*[:\-])\s*(\d+)', raw_text)
         e_m = re.search(r'(?i)(?:episode|ep|e|episode\s*[:\-])\s*(\d+)', raw_text)
         
@@ -260,14 +290,13 @@ def index_files(message):
         bot.reply_to(message, f"⚠️ Error saving file: {str(e)}")
 
 # ==========================================
-# 3. SMART SEARCH ENGINE
+# 3. SMART SEARCH (WITH LOCAL FALLBACK)
 # ==========================================
 
 @bot.message_handler(func=lambda message: True)
 def search_logic(message):
-    # 🛡️ BULLETPROOF COMMAND SHIELD
     if message.text.startswith('/'): 
-        bot.reply_to(message, "⚠️ এটি একটি ভুল কমান্ড। সঠিক কমান্ড দেখতে মেনু চেক করুন।")
+        bot.reply_to(message, "⚠️ Invalid command. Please check the menu.")
         return 
     
     if is_banned(message.chat.id):
@@ -286,26 +315,37 @@ def search_logic(message):
         db_results = list(files_col.find({"$and": [{"base_title": {"$regex": w, "$options": "i"}} for w in words]}))
         
         tmdb_res = requests.get(f"https://api.themoviedb.org/3/search/multi?api_key={TMDB_API_KEY}&query={query}", timeout=10).json()
+        
+        # 🧠 LOCAL DB FALLBACK ENGINE (Fixes the 'No Results Found' on messy names)
         if tmdb_res.get('results'):
             item = tmdb_res['results'][0]
             title, is_movie = item.get('title') or item.get('name'), item.get('media_type') == 'movie'
             caption = f"🎬 **Title:** {title}\n⭐ **Rating:** {item.get('vote_average', 'N/A')}/10\n\n"
-            markup = telebot.types.InlineKeyboardMarkup(row_width=2)
-            
-            if not db_results:
-                caption += "⚠️ Hindi Dubbed not found. Request below."
-                markup.add(telebot.types.InlineKeyboardButton("🙋‍♂️ Request", callback_data=f"req_{query[:15]}"))
-            else:
-                if is_movie:
-                    for f in db_results: markup.add(telebot.types.InlineKeyboardButton("🎬 Watch Now", callback_data=f"file_{f['_id']}"))
-                else:
-                    seasons = sorted(list(set(f['s_num'] for f in db_results)))
-                    markup.add(*[telebot.types.InlineKeyboardButton(f"Season {s}", callback_data=f"list_{query[:15]}_{s}") for s in seasons])
-            
             poster = f"https://image.tmdb.org/t/p/w500{item.get('poster_path')}" if item.get('poster_path') else None
-            if poster: bot.send_photo(message.chat.id, poster, caption=caption, reply_markup=markup, parse_mode="Markdown")
-            else: bot.send_message(message.chat.id, caption, reply_markup=markup, parse_mode="Markdown")
-        else: bot.reply_to(message, "😔 No results found.")
+        elif db_results:
+            title = db_results[0].get('base_title', '').title()
+            is_movie = not any(f.get('e_num') for f in db_results)
+            caption = f"🎬 **Title:** {title}\n⭐ **Rating:** N/A (Local Database)\n\n"
+            poster = None
+        else:
+            bot.reply_to(message, "😔 No results found.")
+            return
+
+        markup = telebot.types.InlineKeyboardMarkup(row_width=2)
+        
+        if not db_results:
+            caption += "⚠️ Hindi Dubbed not found. Request below."
+            markup.add(telebot.types.InlineKeyboardButton("🙋‍♂️ Request", callback_data=f"req_{query[:15]}"))
+        else:
+            if is_movie:
+                for f in db_results: markup.add(telebot.types.InlineKeyboardButton("🎬 Watch Now", callback_data=f"file_{f['_id']}"))
+            else:
+                seasons = sorted(list(set(f['s_num'] for f in db_results)))
+                markup.add(*[telebot.types.InlineKeyboardButton(f"Season {s}", callback_data=f"list_{query[:15]}_{s}") for s in seasons])
+        
+        if poster: bot.send_photo(message.chat.id, poster, caption=caption, reply_markup=markup, parse_mode="Markdown")
+        else: bot.send_message(message.chat.id, caption, reply_markup=markup, parse_mode="Markdown")
+            
     except Exception as e: 
         print(f"Search Error: {e}")
 
@@ -324,7 +364,7 @@ def handle_callbacks(call):
             f = files_col.find_one({"_id": ObjectId(data[1])})
             if f:
                 caption = f"🎬 **{f['file_name']}**\n🍿 Powered by @RAnimeTV"
-                if timer_min > 0: caption += f"\n\n⚠️ **Note:** এই ভিডিওটি মাত্র {timer_min} মিনিট থাকবে, তারপর অটোমেটিক ডিলিট হয়ে যাবে।"
+                if timer_min > 0: caption += f"\n\n⚠️ **Note:** This video will be automatically deleted in {timer_min} minutes."
                 sent_msg = bot.send_document(call.message.chat.id, f['file_id'], caption=caption)
                 if timer_min > 0: threading.Thread(target=delete_timer, args=(call.message.chat.id, sent_msg.message_id, timer_min)).start()
 
@@ -332,16 +372,16 @@ def handle_callbacks(call):
             key = data[1]
             count = files_col.count_documents({"base_title": {"$regex": key, "$options": "i"}})
             markup = telebot.types.InlineKeyboardMarkup()
-            markup.add(telebot.types.InlineKeyboardButton("✅ Yes, Delete", callback_data=f"finaldel_{key}"), telebot.types.InlineKeyboardButton("❌ No, Cancel", callback_data="cancel"))
-            bot.edit_message_text(f"⚠️ **পাবলিক কনফার্মেশন!**\nআপনি কি নিশ্চিত যে আপনি '{key.title()}' মুভিটি সরাতে চান? এটি ডাটাবেস থেকে {count} টি ফাইল ডিলিট করবে।", call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+            markup.add(telebot.types.InlineKeyboardButton("✅ Yes, Delete", callback_data=f"finaldel_{key}"), telebot.types.InlineKeyboardButton("❌ Cancel", callback_data="cancel"))
+            bot.edit_message_text(f"⚠️ **Confirmation!**\nAre you sure you want to delete '{key.title()}'? This will remove {count} files from the database.", call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
 
         elif data[0] == "finaldel":
             key = data[1]
             result = files_col.delete_many({"base_title": {"$regex": key, "$options": "i"}})
-            bot.edit_message_text(f"✅ **সাকসেস!** ডাটাবেস থেকে '{key.title()}' এর {result.deleted_count} টি ফাইল চিরতরে মুছে ফেলা হয়েছে।", call.message.chat.id, call.message.message_id)
+            bot.edit_message_text(f"✅ **Success!** {result.deleted_count} files of '{key.title()}' have been deleted.", call.message.chat.id, call.message.message_id)
 
         elif data[0] == "cancel":
-            bot.edit_message_text("❌ ডিলিট প্রসেস বাতিল করা হয়েছে।", call.message.chat.id, call.message.message_id)
+            bot.edit_message_text("❌ Deletion process cancelled.", call.message.chat.id, call.message.message_id)
 
         elif data[0] == "list":
             q, s = data[1], int(data[2])
@@ -366,21 +406,3 @@ def handle_callbacks(call):
             markup = telebot.types.InlineKeyboardMarkup(row_width=2)
             markup.add(*[telebot.types.InlineKeyboardButton(f"Season {s}", callback_data=f"list_{data[1]}_{s}") for s in sorted(list(set(f['s_num'] for f in db_res)))])
             bot.edit_message_caption("👇 **Select Season:**", call.message.chat.id, call.message.message_id, reply_markup=markup)
-
-        elif data[0] == "req":
-            bot.send_message(ADMIN_ID, f"🔔 **New Request:**\nUser: `{call.message.chat.id}`\nTitle: {data[1]}")
-            bot.answer_callback_query(call.id, "✅ Request sent to Admin!", show_alert=True)
-    except Exception as e: print(f"Callback Error: {e}")
-
-@app.route('/')
-def index(): return "🚀 V3.7 FLAGSHIP Active!"
-
-def run_bot():
-    set_bot_commands()
-    try: bot.remove_webhook()
-    except: pass
-    bot.infinity_polling(timeout=60, logger_level=importlib.logging.ERROR if 'importlib' in globals() else None) # Suppress annoying logs
-
-if __name__ == "__main__":
-    threading.Thread(target=run_bot).start()
-    app.run(host="0.0.0.0", port=int(os.environ.get('PORT', 10000)))
