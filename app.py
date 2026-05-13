@@ -504,10 +504,15 @@ def handle_callbacks(call):
 
         elif cmd == "cancel_del": bot.edit_message_text("❌ Cancelled.", uid, call.message.message_id)
         
-        elif cmd == "quickreq":
+                elif cmd == "quickreq":
             if not requests_col.find_one({"title_lower": data[1].lower(), "status": "pending"}):
-                res = requests_col.insert_one({"user_id": uid, "title": data[1], "title_lower": data[1].lower(), "status": "pending"})
-                markup = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("✅ Done", callback_data=f"reqok|{res.inserted_id}"))
+                # 🔥 Claude-এর সাজেশন অনুযায়ী নাম বদলানো হলো (db_res)
+                db_res = requests_col.insert_one({"user_id": uid, "title": data[1], "title_lower": data[1].lower(), "status": "pending"})
+                
+                markup = types.InlineKeyboardMarkup()
+                markup.add(types.InlineKeyboardButton("✅ Approve", callback_data=f"reqok|{db_res.inserted_id}"), 
+                           types.InlineKeyboardButton("❌ Reject", callback_data=f"reqno|{db_res.inserted_id}"))
+                
                 for admin_id in get_settings().get("admins", [MAIN_ADMIN_ID]):
                     try: bot.send_message(admin_id, f"🔔 *Quick Request!*\n`{data[1]}`\nUser: `{uid}`", reply_markup=markup, parse_mode="Markdown")
                     except: pass
@@ -518,12 +523,34 @@ def handle_callbacks(call):
             if req:
                 action = "approved" if cmd == "reqok" else "rejected"
                 requests_col.update_one({"_id": ObjectId(data[1])}, {"$set": {"status": action}})
-                msg = f"✅ Request *{req['title']}* Approved! 🎬" if action == "approved" else f"😔 *{req['title']}* is unavailable right now."
-                try: bot.send_message(req["user_id"], msg, parse_mode="Markdown")
-                except: pass
+                
+                title = req["title"]
+                user_id = req["user_id"]
+                
+                if action == "approved":
+                    deep_link = get_deep_link(title)
+                    caption = f"✅ আপনার রিকোয়েস্ট করা মুভিটি আপলোড করা হয়েছে!\n\n👇 **দেখার জন্য নিচে ক্লিক করুন:**\n👉 **[{title}]({deep_link})**"
+                    
+                    poster = None
+                    try:
+                        # 🔥 Claude-এর সাজেশন অনুযায়ী নাম বদলানো হলো (tmdb_res)
+                        tmdb_res = requests.get(f"https://api.themoviedb.org/3/search/multi?api_key={TMDB_API_KEY}&query={title}", timeout=8).json()
+                        if tmdb_res.get("results") and tmdb_res["results"][0].get("poster_path"):
+                            poster = f"https://image.tmdb.org/t/p/w500{tmdb_res['results'][0]['poster_path']}"
+                    except: pass
+                    
+                    try:
+                        if poster: bot.send_photo(user_id, poster, caption=caption, parse_mode="Markdown")
+                        else: bot.send_message(user_id, caption, parse_mode="Markdown", disable_web_page_preview=True)
+                    except: pass
+                else:
+                    msg = f"😔 দুঃখিত! **{title}** মুভিটি এই মুহূর্তে পাওয়া যাচ্ছে না।"
+                    try: bot.send_message(user_id, msg, parse_mode="Markdown")
+                    except: pass
+                
                 emoji = "✅" if action == "approved" else "❌"
-                bot.edit_message_text(f"{emoji} Request `{action}`: *{req['title']}*", uid, call.message.message_id, parse_mode="Markdown")
-
+                bot.edit_message_text(f"{emoji} Request `{action}`: *{title}*", uid, call.message.message_id, parse_mode="Markdown")
+                
     except Exception as e: log.error(f"Callback error: {e}")
     try: bot.answer_callback_query(call.id)
     except: pass
