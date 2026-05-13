@@ -504,7 +504,7 @@ def handle_callbacks(call):
 
         elif cmd == "cancel_del": bot.edit_message_text("❌ Cancelled.", uid, call.message.message_id)
         
-                elif cmd == "quickreq":
+        elif cmd == "quickreq":
             if not requests_col.find_one({"title_lower": data[1].lower(), "status": "pending"}):
                 # 🔥 Claude-এর সাজেশন অনুযায়ী নাম বদলানো হলো (db_res)
                 db_res = requests_col.insert_one({"user_id": uid, "title": data[1], "title_lower": data[1].lower(), "status": "pending"})
