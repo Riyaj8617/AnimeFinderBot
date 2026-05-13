@@ -183,7 +183,7 @@ def send_list_page(chat_id, page, edit_msg_id=None):
     results = results[:PAGE_SIZE]
 
     if not results:
-        bot.send_message(chat_id, "🚫 কোনো মুভি নেই।")
+        bot.send_message(chat_id, "🚫 No movies found.")
         return
 
     lines = [f"📚 *Our Collection* (Page {page+1}):\n"]
@@ -222,18 +222,18 @@ def cmd_request(message):
     for admin_id in s.get("admins", [MAIN_ADMIN_ID]):
         try: bot.send_message(admin_id, f"🔔 *New Request!*\nTitle: `{title}`\nUser: `{message.chat.id}`", parse_mode="Markdown", reply_markup=markup)
         except: pass
-
+ 
 # ─────────────────────────────────────────────
-# 6. ADMIN COMMANDS (All Claude Handlers Added)
+# 6. ADMIN COMMANDS
 # ─────────────────────────────────────────────
 @bot.message_handler(commands=["topsearch"])
 def cmd_topsearch(message):
     if not is_admin(message.chat.id): return
     top = list(searches_col.find().sort("count", -1).limit(10))
-    if not top: return bot.reply_to(message, "🚫 কোনো search data নেই এখনো।")
+    if not top: return bot.reply_to(message, "🚫 No search data available yet.")
     lines = ["🔥 *Trending Searches:*\n"]
     for i, s in enumerate(top, 1):
-        lines.append(f"{i}. {s['query'].title()} — `{s['count']}` বার")
+        lines.append(f"{i}. {s['query'].title()} — `{s['count']}` times")
     bot.reply_to(message, "\n".join(lines), parse_mode="Markdown")
 
 @bot.message_handler(commands=["addadmin"])
@@ -358,7 +358,6 @@ def cmd_delete_menu(message):
 @bot.message_handler(commands=["broadcast"])
 def cmd_broadcast(message):
     if not is_admin(message.chat.id) or not message.reply_to_message: return
-    # 🔥 BANNED USER SKIP FIX APPLIED
     users = list(users_col.find({"banned": {"$ne": True}}, {"user_id": 1}))
     bot.reply_to(message, f"🚀 Broadcasting to {len(users)} users...")
     sent = 0
@@ -506,7 +505,6 @@ def handle_callbacks(call):
         
         elif cmd == "quickreq":
             if not requests_col.find_one({"title_lower": data[1].lower(), "status": "pending"}):
-                # 🔥 Claude-এর সাজেশন অনুযায়ী নাম বদলানো হলো (db_res)
                 db_res = requests_col.insert_one({"user_id": uid, "title": data[1], "title_lower": data[1].lower(), "status": "pending"})
                 
                 markup = types.InlineKeyboardMarkup()
@@ -529,11 +527,10 @@ def handle_callbacks(call):
                 
                 if action == "approved":
                     deep_link = get_deep_link(title)
-                    caption = f"✅ আপনার রিকোয়েস্ট করা মুভিটি আপলোড করা হয়েছে!\n\n👇 **দেখার জন্য নিচে ক্লিক করুন:**\n👉 **[{title}]({deep_link})**"
+                    caption = f"✅ **Your requested movie is available now!**\n\n👇 **Click below to watch:**\n👉 **[{title}]({deep_link})**"
                     
                     poster = None
                     try:
-                        # 🔥 Claude-এর সাজেশন অনুযায়ী নাম বদলানো হলো (tmdb_res)
                         tmdb_res = requests.get(f"https://api.themoviedb.org/3/search/multi?api_key={TMDB_API_KEY}&query={title}", timeout=8).json()
                         if tmdb_res.get("results") and tmdb_res["results"][0].get("poster_path"):
                             poster = f"https://image.tmdb.org/t/p/w500{tmdb_res['results'][0]['poster_path']}"
@@ -544,7 +541,7 @@ def handle_callbacks(call):
                         else: bot.send_message(user_id, caption, parse_mode="Markdown", disable_web_page_preview=True)
                     except: pass
                 else:
-                    msg = f"😔 দুঃখিত! **{title}** মুভিটি এই মুহূর্তে পাওয়া যাচ্ছে না।"
+                    msg = f"😔 **Sorry!** `{title}` is currently unavailable."
                     try: bot.send_message(user_id, msg, parse_mode="Markdown")
                     except: pass
                 
