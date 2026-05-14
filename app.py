@@ -540,6 +540,192 @@ def handle_callbacks(call):
         
         elif cmd == "quickreq":
             if not requests_col.find_one({"title_lower": data[1].lower(), "status": "pending"}):
+
+# ─────────────────────────────────────────────
+# 7. INDEXING & SEARCH (With Quality Extractor)
+# ─────────────────────────────────────────────
+@bot.message_handler(content_types=["video", "document"])
+def index_files(message):
+    if not is_admin(message.chat.id): return
+    try:
+        raw = message.caption or (message.document.file_name if message.document else "Unknown")
+        file_id = message.video.file_id if message.video else message.document.file_id
+
+        # 🔥 FIXED BUG 1: সবকিছু ডিফল্ট lowercase ("hd") এ সেভ হবে
+        q_match = re.search(r"(?i)(1080p|720p|480p|360p|2160p|4k)", raw)
+        quality = q_match.group(1).lower() if q_match else "hd"
+
+        s_m = re.search(r"(?i)(?:season|s)\s*(\d+)", raw)
+        e_m = re.search(r"(?i)(?:episode|ep|e)\s*(\d+)", raw)
+        s_num = int(s_m.group(1)) if s_m else 1
+        e_num = int(e_m.group(1)) if e_m else None
+
+        split_point = re.split(r"(?i)season|episode|ep|s\d+[^a-zA-Z]|e\d+[^a-zA-Z]", raw)[0]
+        list_title = re.sub(r'\[.*?\]|\(.*?\)', '', split_point).strip()
+        base_title = clean_name_for_search(split_point)
+        
+        display = f"{list_title} S{s_num:02d} E{e_num:02d}" if e_num else list_title
+
+        files_col.update_one(
+            {"file_id": file_id},
+            {"$set": {"file_name": display, "base_title": base_title, "list_title": list_title, "s_num": s_num, "e_num": e_num, "quality": quality, "file_id": file_id}},
+            upsert=True
+        )
+        bot.reply_to(message, f"✅ Indexed: *{display}* ({quality.upper()})", parse_mode="Markdown")
+    except Exception as e: log.error(f"Index error: {e}")
+
+@bot.message_handler(func=lambda m: True)
+def cmd_search(message):
+    if message.text.startswith("/"): return
+    uid = message.chat.id
+    if is_banned(uid): return bot.reply_to(message, "❌ Banned.")
+    if not is_subscribed(uid): return bot.reply_to(message, f"❌ Join channel!\n👉 {CHANNEL_USERNAME}")
+    if is_rate_limited(uid): return bot.reply_to(message, "⚡ Please wait! Max 5 requests per 10s.")
+
+    query = message.text.strip()
+    search_query = clean_name_for_search(query)
+    if not search_query: return
+
+    try: searches_col.update_one({"query": query.lower()}, {"$inc": {"count": 1}}, upsert=True)
+    except: pass
+
+    db_results = list(files_col.find({"$text": {"$search": search_query}}).sort([("score", {"$meta": "textScore"})]))
+    if not db_results:
+        words = search_query.split()
+        db_results = list(files_col.find({"$and": [{"base_title": {"$regex": w, "$options": "i"}} for w in words]}))
+
+    tmdb_title, poster, is_movie = None, None, True
+    try:
+        res = requests.get(f"https://api.themoviedb.org/3/search/multi?api_key={TMDB_API_KEY}&query={query}", timeout=8).json()
+        if res.get("results"):
+            item = res["results"][0]
+            tmdb_title = item.get("title") or item.get("name")
+            is_movie = item.get("media_type") == "movie"
+            if item.get("poster_path"): poster = f"https://image.tmdb.org/t/p/w500{item['poster_path']}"
+    except: pass
+
+    display_title = tmdb_title or (db_results[0].get("list_title", query.title()) if db_results else query.title())
+    caption = f"🎬 *{display_title}*\n\n"
+    markup = types.InlineKeyboardMarkup(row_width=2)
+
+    if not db_results:
+        caption += "😔 Not in our database yet."
+        markup.add(types.InlineKeyboardButton("🙋 Request Admin", callback_data=f"quickreq|{query[:40]}"))
+    else:
+        if is_movie or not any(f.get("e_num") for f in db_results):
+            markup.add(types.InlineKeyboardButton("🎬 Watch Now", callback_data=f"movie_q|{search_query[:30]}"))
+        else:
+            seasons = sorted(set(f["s_num"] for f in db_results))
+            markup.add(*[types.InlineKeyboardButton(f"Season {s}", callback_data=f"season|{search_query[:30]}|{s}") for s in seasons])
+
+    if poster: bot.send_photo(uid, poster, caption=caption, reply_markup=markup, parse_mode="Markdown")
+    else: bot.send_message(uid, caption, reply_markup=markup, parse_mode="Markdown")
+
+# ─────────────────────────────────────────────
+# 8. BULLETPROOF CALLBACK HANDLER (Fixed Edition)
+# ─────────────────────────────────────────────
+@bot.callback_query_handler(func=lambda call: True)
+def handle_callbacks(call):
+    data = call.data.split("|")
+    uid = call.message.chat.id
+    cmd = data[0]
+    timer = get_settings().get("auto_delete_min", 0)
+
+    try:
+        if cmd == "page":
+            send_list_page(uid, int(data[1]), call.message.message_id)
+            
+        elif cmd == "movie_q": 
+            q = data[1]
+            files = list(files_col.find({"base_title": {"$regex": q, "$options": "i"}, "e_num": None}))
+            if not files: files = list(files_col.find({"base_title": {"$regex": q, "$options": "i"}}))
+            markup = types.InlineKeyboardMarkup(row_width=3)
+            q_btns = []
+            qualities_added = set()
+            for f in files:
+                qual = f.get("quality", "hd").lower()
+                if qual not in qualities_added:
+                    q_btns.append(types.InlineKeyboardButton(f"🎬 {qual.upper()}", callback_data=f"file|{f['_id']}"))
+                    qualities_added.add(qual)
+            markup.add(*q_btns)
+            markup.add(types.InlineKeyboardButton("🔙 Back", callback_data=f"back|{q}"))
+            
+            # 🔥 FIXED BUG 3: ছবি না থাকলে error এড়ানোর জন্য try-except
+            try: bot.edit_message_caption("👇 *Select Quality:*", uid, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+            except: bot.edit_message_text("👇 *Select Quality:*", uid, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+
+        elif cmd == "season": 
+            q, s_num = data[1], int(data[2])
+            eps = list(files_col.find({"base_title": {"$regex": q, "$options": "i"}, "s_num": s_num}))
+            qualities = sorted(set(f.get("quality", "hd").lower() for f in eps))
+            markup = types.InlineKeyboardMarkup(row_width=3)
+            markup.add(*[types.InlineKeyboardButton(f"💿 {qual.upper()}", callback_data=f"sq|{q}|{s_num}|{qual}") for qual in qualities])
+            markup.add(types.InlineKeyboardButton("🔙 Back", callback_data=f"back|{q}"))
+            
+            try: bot.edit_message_caption(f"📂 *Season {s_num}*\n👇 *Select Quality:*", uid, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+            except: bot.edit_message_text(f"📂 *Season {s_num}*\n👇 *Select Quality:*", uid, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+
+        elif cmd == "sq": 
+            q, s_num, qual = data[1], int(data[2]), data[3]
+            eps = list(files_col.find({"base_title": {"$regex": q, "$options": "i"}, "s_num": s_num, "quality": qual}).sort("e_num", 1))
+            markup = types.InlineKeyboardMarkup(row_width=4)
+            markup.add(*[types.InlineKeyboardButton(f"E{f['e_num']:02d}", callback_data=f"file|{f['_id']}") for f in eps if f.get("e_num")])
+            markup.row(types.InlineKeyboardButton("📥 All Episodes", callback_data=f"alleps|{q}|{s_num}|{qual}"), types.InlineKeyboardButton("🔙 Back", callback_data=f"season|{q}|{s_num}"))
+            
+            try: bot.edit_message_caption(f"📂 *Season {s_num} ({qual.upper()})*\n👇 *Select Episode:*", uid, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+            except: bot.edit_message_text(f"📂 *Season {s_num} ({qual.upper()})*\n👇 *Select Episode:*", uid, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+
+        elif cmd == "alleps":
+            q, s_num = data[1], int(data[2])
+            qual = data[3] if len(data) > 3 else "hd" # 🔥 FIXED BUG 2: Safe Indexing
+            eps = list(files_col.find({"base_title": {"$regex": q, "$options": "i"}, "s_num": s_num, "quality": qual}).sort("e_num", 1))
+            bot.answer_callback_query(call.id, f"🚀 Sending {len(eps)} eps...")
+            for f in eps:
+                cap = f"🎬 *{f['file_name']}*\n⚙️ Quality: {f.get('quality', 'HD').upper()}"
+                if timer > 0: cap += f"\n⚠️ Deleting in {timer} min."
+                sent = bot.send_document(uid, f["file_id"], caption=cap, parse_mode="Markdown")
+                schedule_delete(uid, sent.message_id, timer)
+                time.sleep(0.5)
+
+        elif cmd == "file":
+            f = files_col.find_one({"_id": ObjectId(data[1])})
+            if f:
+                cap = f"🎬 *{f['file_name']}*\n⚙️ Quality: {f.get('quality', 'HD').upper()}\n🍿 Powered by {CHANNEL_USERNAME}"
+                if timer > 0: cap += f"\n⚠️ Deleting in {timer} minutes."
+                sent = bot.send_document(uid, f["file_id"], caption=cap, parse_mode="Markdown")
+                schedule_delete(uid, sent.message_id, timer)
+
+        elif cmd == "back":
+            db_res = list(files_col.find({"base_title": {"$regex": data[1], "$options": "i"}}))
+            markup = types.InlineKeyboardMarkup(row_width=2)
+            if not any(f.get("e_num") for f in db_res):
+                markup.add(types.InlineKeyboardButton("🎬 Watch Now", callback_data=f"movie_q|{data[1]}"))
+            else:
+                seasons = sorted(set(f["s_num"] for f in db_res))
+                markup.add(*[types.InlineKeyboardButton(f"Season {s}", callback_data=f"season|{data[1]}|{s}") for s in seasons])
+            
+            # 🔥 FIXED BUG 3
+            try: bot.edit_message_caption("👇 *Select Option:*", uid, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+            except: bot.edit_message_text("👇 *Select Option:*", uid, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+
+        elif cmd == "askdel":
+            key = data[1]
+            count = files_col.count_documents({"base_title": key})
+            markup = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("✅ Yes", callback_data=f"finaldel|{key}"), types.InlineKeyboardButton("❌ No", callback_data="cancel_del"))
+            try: bot.edit_message_caption(f"⚠️ Delete `{key}`?\nRemoves {count} files.", uid, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+            except: bot.edit_message_text(f"⚠️ Delete `{key}`?\nRemoves {count} files.", uid, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+
+        elif cmd == "finaldel":
+            res = files_col.delete_many({"base_title": data[1]})
+            try: bot.edit_message_caption(f"✅ {res.deleted_count} files deleted.", uid, call.message.message_id)
+            except: bot.edit_message_text(f"✅ {res.deleted_count} files deleted.", uid, call.message.message_id)
+
+        elif cmd == "cancel_del": 
+            try: bot.edit_message_caption("❌ Cancelled.", uid, call.message.message_id)
+            except: bot.edit_message_text("❌ Cancelled.", uid, call.message.message_id)
+        
+        elif cmd == "quickreq":
+            if not requests_col.find_one({"title_lower": data[1].lower(), "status": "pending"}):
                 db_res = requests_col.insert_one({"user_id": uid, "title": data[1], "title_lower": data[1].lower(), "status": "pending"})
                 
                 markup = types.InlineKeyboardMarkup()
@@ -581,7 +767,8 @@ def handle_callbacks(call):
                     except: pass
                 
                 emoji = "✅" if action == "approved" else "❌"
-                bot.edit_message_text(f"{emoji} Request `{action}`: *{title}*", uid, call.message.message_id, parse_mode="Markdown")
+                try: bot.edit_message_caption(f"{emoji} Request `{action}`: *{title}*", uid, call.message.message_id, parse_mode="Markdown")
+                except: bot.edit_message_text(f"{emoji} Request `{action}`: *{title}*", uid, call.message.message_id, parse_mode="Markdown")
                 
     except Exception as e: log.error(f"Callback error: {e}")
     try: bot.answer_callback_query(call.id)
