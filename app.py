@@ -222,7 +222,7 @@ def cmd_request(message):
     for admin_id in s.get("admins", [MAIN_ADMIN_ID]):
         try: bot.send_message(admin_id, f"🔔 *New Request!*\nTitle: `{title}`\nUser: `{message.chat.id}`", parse_mode="Markdown", reply_markup=markup)
         except: pass
- 
+
 # ─────────────────────────────────────────────
 # 6. ADMIN COMMANDS
 # ─────────────────────────────────────────────
@@ -370,7 +370,7 @@ def cmd_broadcast(message):
     bot.send_message(MAIN_ADMIN_ID, f"✅ Broadcast done! Sent: `{sent}`")
 
 # ─────────────────────────────────────────────
-# 7. INDEXING & SEARCH
+# 7. INDEXING & SEARCH (With Quality Extractor)
 # ─────────────────────────────────────────────
 @bot.message_handler(content_types=["video", "document"])
 def index_files(message):
@@ -378,6 +378,10 @@ def index_files(message):
     try:
         raw = message.caption or (message.document.file_name if message.document else "Unknown")
         file_id = message.video.file_id if message.video else message.document.file_id
+
+        # 🔥 Quality Extractor added!
+        q_match = re.search(r"(?i)(1080p|720p|480p|360p|2160p|4k)", raw)
+        quality = q_match.group(1).lower() if q_match else "HD"
 
         s_m = re.search(r"(?i)(?:season|s)\s*(\d+)", raw)
         e_m = re.search(r"(?i)(?:episode|ep|e)\s*(\d+)", raw)
@@ -392,10 +396,10 @@ def index_files(message):
 
         files_col.update_one(
             {"file_id": file_id},
-            {"$set": {"file_name": display, "base_title": base_title, "list_title": list_title, "s_num": s_num, "e_num": e_num, "file_id": file_id}},
+            {"$set": {"file_name": display, "base_title": base_title, "list_title": list_title, "s_num": s_num, "e_num": e_num, "quality": quality, "file_id": file_id}},
             upsert=True
         )
-        bot.reply_to(message, f"✅ Indexed: *{display}*", parse_mode="Markdown")
+        bot.reply_to(message, f"✅ Indexed: *{display}* ({quality.upper()})", parse_mode="Markdown")
     except Exception as e: log.error(f"Index error: {e}")
 
 @bot.message_handler(func=lambda m: True)
@@ -436,8 +440,9 @@ def cmd_search(message):
         caption += "😔 Not in our database yet."
         markup.add(types.InlineKeyboardButton("🙋 Request Admin", callback_data=f"quickreq|{query[:40]}"))
     else:
+        # 🔥 Watch Now / Season flow update!
         if is_movie or not any(f.get("e_num") for f in db_results):
-            for f in db_results[:5]: markup.add(types.InlineKeyboardButton("🎬 Watch Now", callback_data=f"file|{f['_id']}"))
+            markup.add(types.InlineKeyboardButton("🎬 Watch Now", callback_data=f"movie_q|{search_query[:30]}"))
         else:
             seasons = sorted(set(f["s_num"] for f in db_results))
             markup.add(*[types.InlineKeyboardButton(f"Season {s}", callback_data=f"season|{search_query[:30]}|{s}") for s in seasons])
@@ -446,7 +451,7 @@ def cmd_search(message):
     else: bot.send_message(uid, caption, reply_markup=markup, parse_mode="Markdown")
 
 # ─────────────────────────────────────────────
-# 8. BULLETPROOF CALLBACK HANDLER
+# 8. BULLETPROOF CALLBACK HANDLER (With Quality)
 # ─────────────────────────────────────────────
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callbacks(call):
@@ -459,37 +464,67 @@ def handle_callbacks(call):
         if cmd == "page":
             send_list_page(uid, int(data[1]), call.message.message_id)
             
-        elif cmd == "file":
-            f = files_col.find_one({"_id": ObjectId(data[1])})
-            if f:
-                cap = f"🎬 *{f['file_name']}*\n🍿 Powered by {CHANNEL_USERNAME}"
-                if timer > 0: cap += f"\n⚠️ Deleting in {timer} minutes."
-                sent = bot.send_document(uid, f["file_id"], caption=cap, parse_mode="Markdown")
-                schedule_delete(uid, sent.message_id, timer)
+        elif cmd == "movie_q": # 🔥 New: Movie Quality Selection
+            q = data[1]
+            files = list(files_col.find({"base_title": {"$regex": q, "$options": "i"}, "e_num": None}))
+            if not files: files = list(files_col.find({"base_title": {"$regex": q, "$options": "i"}}))
+            markup = types.InlineKeyboardMarkup(row_width=3)
+            q_btns = []
+            qualities_added = set()
+            for f in files:
+                qual = f.get("quality", "HD").upper()
+                if qual not in qualities_added:
+                    q_btns.append(types.InlineKeyboardButton(f"🎬 {qual}", callback_data=f"file|{f['_id']}"))
+                    qualities_added.add(qual)
+            markup.add(*q_btns)
+            markup.add(types.InlineKeyboardButton("🔙 Back", callback_data=f"back|{q}"))
+            bot.edit_message_caption("👇 *Select Quality:*", uid, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
 
-        elif cmd == "season":
+        elif cmd == "season": # 🔥 Updated: Now goes to Quality instead of Episodes directly
             q, s_num = data[1], int(data[2])
-            eps = list(files_col.find({"base_title": {"$regex": q, "$options": "i"}, "s_num": s_num}).sort("e_num", 1))
+            eps = list(files_col.find({"base_title": {"$regex": q, "$options": "i"}, "s_num": s_num}))
+            qualities = sorted(set(f.get("quality", "hd") for f in eps))
+            markup = types.InlineKeyboardMarkup(row_width=3)
+            markup.add(*[types.InlineKeyboardButton(f"💿 {qual.upper()}", callback_data=f"sq|{q}|{s_num}|{qual}") for qual in qualities])
+            markup.add(types.InlineKeyboardButton("🔙 Back", callback_data=f"back|{q}"))
+            bot.edit_message_caption(f"📂 *Season {s_num}*\n👇 *Select Quality:*", uid, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+
+        elif cmd == "sq": # 🔥 New: Season Quality Episode Viewer
+            q, s_num, qual = data[1], int(data[2]), data[3]
+            eps = list(files_col.find({"base_title": {"$regex": q, "$options": "i"}, "s_num": s_num, "quality": qual}).sort("e_num", 1))
             markup = types.InlineKeyboardMarkup(row_width=4)
             markup.add(*[types.InlineKeyboardButton(f"E{f['e_num']:02d}", callback_data=f"file|{f['_id']}") for f in eps if f.get("e_num")])
-            markup.row(types.InlineKeyboardButton("📥 All Episodes", callback_data=f"alleps|{q}|{s_num}"), types.InlineKeyboardButton("🔙 Back", callback_data=f"back|{q}"))
-            bot.edit_message_caption(f"📂 *Season {s_num}*", uid, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+            markup.row(types.InlineKeyboardButton("📥 All Episodes", callback_data=f"alleps|{q}|{s_num}|{qual}"), types.InlineKeyboardButton("🔙 Back", callback_data=f"season|{q}|{s_num}"))
+            bot.edit_message_caption(f"📂 *Season {s_num} ({qual.upper()})*\n👇 *Select Episode:*", uid, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
 
         elif cmd == "alleps":
-            eps = list(files_col.find({"base_title": {"$regex": data[1], "$options": "i"}, "s_num": int(data[2])}).sort("e_num", 1))
+            q, s_num, qual = data[1], int(data[2]), data[3]
+            eps = list(files_col.find({"base_title": {"$regex": q, "$options": "i"}, "s_num": s_num, "quality": qual}).sort("e_num", 1))
             bot.answer_callback_query(call.id, f"🚀 Sending {len(eps)} eps...")
             for f in eps:
-                cap = f"🎬 *{f['file_name']}*"
+                cap = f"🎬 *{f['file_name']}*\n⚙️ Quality: {f.get('quality', 'HD').upper()}"
                 if timer > 0: cap += f"\n⚠️ Deleting in {timer} min."
                 sent = bot.send_document(uid, f["file_id"], caption=cap, parse_mode="Markdown")
                 schedule_delete(uid, sent.message_id, timer)
                 time.sleep(0.5)
 
+        elif cmd == "file":
+            f = files_col.find_one({"_id": ObjectId(data[1])})
+            if f:
+                cap = f"🎬 *{f['file_name']}*\n⚙️ Quality: {f.get('quality', 'HD').upper()}\n🍿 Powered by {CHANNEL_USERNAME}"
+                if timer > 0: cap += f"\n⚠️ Deleting in {timer} minutes."
+                sent = bot.send_document(uid, f["file_id"], caption=cap, parse_mode="Markdown")
+                schedule_delete(uid, sent.message_id, timer)
+
         elif cmd == "back":
             db_res = list(files_col.find({"base_title": {"$regex": data[1], "$options": "i"}}))
             markup = types.InlineKeyboardMarkup(row_width=2)
-            markup.add(*[types.InlineKeyboardButton(f"Season {s}", callback_data=f"season|{data[1]}|{s}") for s in sorted(set(f["s_num"] for f in db_res))])
-            bot.edit_message_caption("👇 *Select Season:*", uid, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+            if not any(f.get("e_num") for f in db_res):
+                markup.add(types.InlineKeyboardButton("🎬 Watch Now", callback_data=f"movie_q|{data[1]}"))
+            else:
+                seasons = sorted(set(f["s_num"] for f in db_res))
+                markup.add(*[types.InlineKeyboardButton(f"Season {s}", callback_data=f"season|{data[1]}|{s}") for s in seasons])
+            bot.edit_message_caption("👇 *Select Option:*", uid, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
 
         elif cmd == "askdel":
             key = data[1]
